@@ -274,12 +274,12 @@
       if (!currentSessionId || isStreaming) return;
       pollCount++;
       try {
-        // 使用 getMessagesLight 检测变化（只获取最后1条）
-        const lightMsgs = await window.mimo.getMessagesLight(currentSessionId);
-        const lightList = Array.isArray(lightMsgs) ? lightMsgs : [];
-        if (lightList.length === 0) return;
+        // 获取完整列表的最后一条ID来检测变化
+        const fullMsgs = await window.mimo.getMessages(currentSessionId);
+        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        if (fullList.length === 0) return;
 
-        const latestId = lightList[lightList.length - 1].info?.id || '';
+        const latestId = fullList[fullList.length - 1].info?.id || '';
         if (!latestId || latestId === lastMsgId) {
           if (syncStatus) syncStatus.textContent = '监听中 #' + pollCount + ' (缓存: ' + (messageCache[currentSessionId]?.length || 0) + ')';
           return;
@@ -289,9 +289,7 @@
         lastMsgId = latestId;
         if (syncStatus) syncStatus.textContent = '检测到变化 #' + pollCount + ': ' + latestId.substring(0, 15) + '...';
 
-        // 获取完整列表并更新缓存
-        const fullMsgs = await window.mimo.getMessages(currentSessionId);
-        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        // 更新缓存
         messageCache[currentSessionId] = fullList;
 
         const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
