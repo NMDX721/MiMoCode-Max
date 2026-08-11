@@ -118,7 +118,10 @@
 
   function renderMessageParts(msg) {
     const role = msg.info?.role || 'assistant';
-    if (!msg.parts || !Array.isArray(msg.parts)) return;
+    if (!msg.parts || !Array.isArray(msg.parts)) {
+      console.log('[Render] Skipping message with no parts:', msg.info?.id);
+      return;
+    }
 
     const container = document.createElement('div');
     container.className = `message ${role}`;
@@ -144,11 +147,20 @@
         case 'file':
           container.appendChild(createFile(part));
           break;
+        case 'step-start':
+        case 'step-finish':
+          // 跳过步骤标记，不创建DOM元素
+          break;
+        default:
+          console.log('[Render] Unknown part type:', part.type);
       }
     }
 
     if (container.children.length > 0) {
+      console.log('[Render] Appending message:', msg.info?.id, 'role:', role, 'children:', container.children.length);
       messagesEl.appendChild(container);
+    } else {
+      console.log('[Render] Container empty, not appending:', msg.info?.id);
     }
   }
 
@@ -253,37 +265,50 @@
   function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     let lastMsgId = '';
+    const syncStatus = document.getElementById('sync-status');
     refreshTimer = setInterval(async () => {
       if (!currentSessionId || isStreaming) return;
       try {
-        // 轻量级轮询：只获取最新1条消息的ID
+        // 轻量级轮询：获取最新消息ID
         const msgs = await window.mimo.getMessagesLight(currentSessionId);
         const list = Array.isArray(msgs) ? msgs : [];
         if (list.length === 0) return;
 
         const latestId = list[list.length - 1].info?.id || '';
-        if (!latestId || latestId === lastMsgId) return;
+        if (!latestId || latestId === lastMsgId) {
+          if (syncStatus) syncStatus.textContent = '监听中 (总计: ' + renderedMsgIds.size + ')';
+          return;
+        }
 
         // 检测到变化
         lastMsgId = latestId;
+        if (syncStatus) syncStatus.textContent = '检测到变化: ' + latestId.substring(0, 15) + '...';
 
-        // 获取完整消息列表（仅在变化时）
+        // 获取完整消息列表
         const fullMsgs = await window.mimo.getMessages(currentSessionId);
         const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
         const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
         // 增量追加新消息
+        let newCount = 0;
         for (const msg of fullList) {
           const msgId = msg.info?.id;
           if (msgId && !renderedMsgIds.has(msgId)) {
-            renderedMsgIds.add(msgId);
             renderMessageParts(msg);
+            renderedMsgIds.add(msgId);
+            newCount++;
           }
+        }
+
+        if (newCount > 0) {
+          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 (总计: ' + renderedMsgIds.size + ')';
+        } else {
+          if (syncStatus) syncStatus.textContent = '无新消息 (总计: ' + renderedMsgIds.size + ')';
         }
 
         if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
       } catch (e) {
-        // 静默跳过错误
+        if (syncStatus) syncStatus.textContent = '错误: ' + e.message;
       }
     }, 3000);
   }
