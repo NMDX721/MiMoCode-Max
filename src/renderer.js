@@ -265,28 +265,27 @@
   function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     let lastMsgId = '';
+    let pollCount = 0;
     const syncStatus = document.getElementById('sync-status');
     refreshTimer = setInterval(async () => {
       if (!currentSessionId || isStreaming) return;
+      pollCount++;
       try {
-        // 轻量级轮询：获取最新消息ID
-        const msgs = await window.mimo.getMessagesLight(currentSessionId);
-        const list = Array.isArray(msgs) ? msgs : [];
-        if (list.length === 0) return;
+        // 获取完整消息列表来检测变化
+        const fullMsgs = await window.mimo.getMessages(currentSessionId);
+        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        if (fullList.length === 0) return;
 
-        const latestId = list[list.length - 1].info?.id || '';
+        const latestId = fullList[fullList.length - 1].info?.id || '';
         if (!latestId || latestId === lastMsgId) {
-          if (syncStatus) syncStatus.textContent = '监听中 (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '监听中 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
           return;
         }
 
         // 检测到变化
         lastMsgId = latestId;
-        if (syncStatus) syncStatus.textContent = '检测到变化: ' + latestId.substring(0, 15) + '...';
+        if (syncStatus) syncStatus.textContent = '检测到变化 #' + pollCount + ': ' + latestId.substring(0, 15) + '...';
 
-        // 获取完整消息列表
-        const fullMsgs = await window.mimo.getMessages(currentSessionId);
-        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
         const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
         // 增量追加新消息
@@ -301,9 +300,9 @@
         }
 
         if (newCount > 0) {
-          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
         } else {
-          if (syncStatus) syncStatus.textContent = '无新消息 (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '无新消息 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
         }
 
         if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
