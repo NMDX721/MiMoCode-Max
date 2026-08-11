@@ -193,6 +193,7 @@ let sseConnection = null;
 let sseSessionId = null;
 
 function startSSE(sessionId) {
+  if (!sessionId) return;
   stopSSE();
   sseSessionId = sessionId;
 
