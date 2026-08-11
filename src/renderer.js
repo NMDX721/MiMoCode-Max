@@ -249,44 +249,39 @@
     return div;
   }
 
-  // ---------- Auto-refresh (incremental sync) ----------
+  // ---------- Auto-refresh (lightweight polling) ----------
   function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
+    let lastMsgId = '';
     refreshTimer = setInterval(async () => {
       if (!currentSessionId || isStreaming) return;
       try {
-        // 使用增量同步端点
-        const events = await window.mimo.getSyncEvents(currentSessionId);
+        // 轻量级轮询：只获取最新1条消息的ID
+        const msgs = await window.mimo.getMessagesLight(currentSessionId);
+        const list = Array.isArray(msgs) ? msgs : [];
+        if (list.length === 0) return;
 
-        if (!Array.isArray(events) || events.length === 0) return;
+        const latestId = list[list.length - 1].info?.id || '';
+        if (!latestId || latestId === lastMsgId) return;
 
-        // 处理事件，提取新消息ID
-        const newMsgIds = new Set();
-        for (const event of events) {
-          if (event.type && event.type.startsWith('message.') && event.data) {
-            const msgId = event.data.id || event.aggregate_id;
-            if (msgId && !renderedMsgIds.has(msgId)) {
-              newMsgIds.add(msgId);
-            }
+        // 检测到变化
+        lastMsgId = latestId;
+
+        // 获取完整消息列表（仅在变化时）
+        const fullMsgs = await window.mimo.getMessages(currentSessionId);
+        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+
+        // 增量追加新消息
+        for (const msg of fullList) {
+          const msgId = msg.info?.id;
+          if (msgId && !renderedMsgIds.has(msgId)) {
+            renderedMsgIds.add(msgId);
+            renderMessageParts(msg);
           }
         }
 
-        // 如果有新消息，获取完整消息列表并渲染
-        if (newMsgIds.size > 0) {
-          const fullMsgs = await window.mimo.getMessages(currentSessionId);
-          const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
-          const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-
-          for (const msg of fullList) {
-            const msgId = msg.info?.id;
-            if (msgId && newMsgIds.has(msgId) && !renderedMsgIds.has(msgId)) {
-              renderedMsgIds.add(msgId);
-              renderMessageParts(msg);
-            }
-          }
-
-          if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
+        if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
       } catch (e) {
         // 静默跳过错误
       }
