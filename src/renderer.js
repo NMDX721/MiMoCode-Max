@@ -7,6 +7,7 @@
   let isStreaming = false;
   let refreshTimer = null;
   let renderedMsgIds = new Set();
+  let messageCache = {}; // { sessionId: [messages] }
 
   // ---------- DOM ----------
   const $ = (s) => document.querySelector(s);
@@ -80,6 +81,8 @@
     try {
       const data = await window.mimo.getMessages(sessionId);
       const list = Array.isArray(data) ? data : [];
+      // 缓存消息
+      messageCache[sessionId] = list;
       const lastUserMsg = list.filter(m => m.info?.role === 'user').pop();
       if (lastUserMsg?.info?.agent) currentAgent = lastUserMsg.info.agent;
       renderMessages(list, false);
@@ -278,19 +281,22 @@
 
         const latestId = lightList[lightList.length - 1].info?.id || '';
         if (!latestId || latestId === lastMsgId) {
-          if (syncStatus) syncStatus.textContent = '监听中 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '监听中 #' + pollCount + ' (缓存: ' + (messageCache[currentSessionId]?.length || 0) + ')';
           return;
         }
 
-        // 检测到变化，获取完整列表
+        // 检测到变化
         lastMsgId = latestId;
         if (syncStatus) syncStatus.textContent = '检测到变化 #' + pollCount + ': ' + latestId.substring(0, 15) + '...';
 
+        // 获取完整列表并更新缓存
         const fullMsgs = await window.mimo.getMessages(currentSessionId);
         const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        messageCache[currentSessionId] = fullList;
+
         const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
-        // 增量追加新消息（只渲染不在 renderedMsgIds 中的）
+        // 增量追加新消息
         let newCount = 0;
         for (const msg of fullList) {
           const msgId = msg.info?.id;
@@ -302,9 +308,9 @@
         }
 
         if (newCount > 0) {
-          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 #' + pollCount + ' (缓存: ' + fullList.length + ')';
         } else {
-          if (syncStatus) syncStatus.textContent = '无新消息 #' + pollCount + ' (总计: ' + renderedMsgIds.size + ')';
+          if (syncStatus) syncStatus.textContent = '无新消息 #' + pollCount + ' (缓存: ' + fullList.length + ')';
         }
 
         if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
