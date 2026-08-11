@@ -1,0 +1,37 @@
+{
+  "name": "mimocode-desktop",
+  "version": "1.0.0",
+  "description": "MiMo Code Desktop - Lightweight GUI client for MiMo Code CLI",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:win:x64": "electron-builder --win nsis:x64"
+  },
+  "build": {
+    "appId": "com.mimocode.desktop",
+    "productName": "MiMo Code - Max",
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^41.10.2",
+    "electron-builder": "^26.8.1"
+  }
+}

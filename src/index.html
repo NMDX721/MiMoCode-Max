@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>MiMo Code - Max</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Title Bar -->
+  <div id="titlebar">
+    <div id="titlebar-left">
+      <img id="titlebar-icon" src="../assets/icon.png" alt="">
+      <span id="titlebar-title">MiMo Code - Max</span>
+    </div>
+    <div id="titlebar-controls">
+      <button id="btn-minimize" title="Minimize">&#x2500;</button>
+      <button id="btn-maximize" title="Maximize">&#x25A1;</button>
+      <button id="btn-close" title="Close">&#x2715;</button>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div id="app">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <button id="btn-new-chat" title="New Chat">+ New Chat</button>
+      </div>
+      <div id="session-list"></div>
+      <div id="sidebar-footer">
+        <button id="btn-settings" title="Settings">&#x2699; 设置</button>
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div id="chat-area">
+      <div id="chat-header">
+        <span id="chat-title">选择一个会话</span>
+        <span id="chat-status"></span>
+      </div>
+      <div id="messages"></div>
+      <div id="input-area">
+        <div id="input-wrapper">
+          <textarea id="message-input" placeholder="输入消息..." rows="1"></textarea>
+          <button id="btn-send" title="Send">&#x27A4;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Panel (hidden by default) -->
+  <div id="settings-panel" class="hidden">
+    <div id="settings-content">
+      <h2>设置</h2>
+      <div class="setting-group">
+        <label>服务器地址</label>
+        <input type="text" id="setting-server-url" placeholder="http://127.0.0.1:4096">
+      </div>
+      <div class="setting-group">
+        <label>背景图片</label>
+        <input type="text" id="setting-bg-image" placeholder="file:///path/to/image.jpg 或 https://...">
+      </div>
+      <div class="setting-group">
+        <label>Logo 图片</label>
+        <input type="text" id="setting-logo-image" placeholder="file:///path/to/logo.png 或 https://...">
+      </div>
+      <div class="setting-group">
+        <label>应用标题</label>
+        <input type="text" id="setting-app-title" placeholder="MiMo Code - Max">
+      </div>
+      <div class="setting-group">
+        <label>主题</label>
+        <select id="setting-theme">
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label>自定义 CSS</label>
+        <textarea id="setting-custom-css" rows="4" placeholder="/* 自定义样式 */"></textarea>
+      </div>
+      <div class="setting-actions">
+        <button id="btn-save-settings" class="btn-primary">保存</button>
+        <button id="btn-close-settings" class="btn-secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
