@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const ApiClient = require('./api');
 const Cache = require('./cache');
 const SyncClient = require('./sync');
@@ -197,7 +198,6 @@ function startSSE(sessionId) {
   stopSSE();
   sseSessionId = sessionId;
 
-  const http = require('http');
   const url = new URL('/global/event', api.baseUrl);
 
   const options = {
