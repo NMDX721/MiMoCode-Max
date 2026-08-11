@@ -8,6 +8,7 @@
   let refreshTimer = null;
   let renderedMsgIds = new Set();
   let messageCache = {}; // { sessionId: [messages] }
+  let eventSource = null; // SSE connection
 
   // ---------- DOM ----------
   const $ = (s) => document.querySelector(s);
@@ -68,7 +69,7 @@
     const session = sessions.find(s => s.id === id);
     chatTitle.textContent = session?.title || 'Untitled';
     renderSessionList();
-    if (refreshTimer) clearInterval(refreshTimer);
+    stopAutoRefresh();
     // 重置同步状态，从头开始同步
     await window.mimo.resetSync(id);
     await loadMessages(id);
@@ -264,58 +265,80 @@
     return div;
   }
 
-  // ---------- Auto-refresh (lightweight polling) ----------
+  // ---------- Auto-refresh (SSE-based) ----------
   function startAutoRefresh() {
-    if (refreshTimer) clearInterval(refreshTimer);
-    let lastMsgId = '';
-    let pollCount = 0;
     const syncStatus = document.getElementById('sync-status');
-    refreshTimer = setInterval(async () => {
+
+    // 关闭旧连接
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    // 连接 SSE
+    const serverUrl = localStorage.getItem('mimo-server-url') || 'http://127.0.0.1:4096';
+    eventSource = new EventSource(serverUrl + '/global/event');
+
+    eventSource.onmessage = async (event) => {
       if (!currentSessionId || isStreaming) return;
-      pollCount++;
+
       try {
-        // 获取完整列表的最后一条ID来检测变化
-        const fullMsgs = await window.mimo.getMessages(currentSessionId);
-        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
-        if (fullList.length === 0) return;
+        const data = JSON.parse(event.data);
+        const payload = data.payload;
 
-        const latestId = fullList[fullList.length - 1].info?.id || '';
-        if (!latestId || latestId === lastMsgId) {
-          if (syncStatus) syncStatus.textContent = '监听中 #' + pollCount + ' (缓存: ' + (messageCache[currentSessionId]?.length || 0) + ')';
-          return;
-        }
+        // 只处理消息相关事件
+        if (payload?.type === 'message.part.updated' || payload?.type === 'message.created') {
+          const sessionId = payload.properties?.sessionID;
+          if (sessionId !== currentSessionId) return;
 
-        // 检测到变化
-        lastMsgId = latestId;
-        if (syncStatus) syncStatus.textContent = '检测到变化 #' + pollCount + ': ' + latestId.substring(0, 15) + '...';
+          // 检测到变化，获取最新消息
+          if (syncStatus) syncStatus.textContent = '检测到变化...';
 
-        // 更新缓存
-        messageCache[currentSessionId] = fullList;
+          // 获取完整列表并更新缓存
+          const fullMsgs = await window.mimo.getMessages(currentSessionId);
+          const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+          messageCache[currentSessionId] = fullList;
 
-        const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+          const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
-        // 增量追加新消息
-        let newCount = 0;
-        for (const msg of fullList) {
-          const msgId = msg.info?.id;
-          if (msgId && !renderedMsgIds.has(msgId)) {
-            renderMessageParts(msg);
-            renderedMsgIds.add(msgId);
-            newCount++;
+          // 增量追加新消息
+          let newCount = 0;
+          for (const msg of fullList) {
+            const msgId = msg.info?.id;
+            if (msgId && !renderedMsgIds.has(msgId)) {
+              renderMessageParts(msg);
+              renderedMsgIds.add(msgId);
+              newCount++;
+            }
           }
-        }
 
-        if (newCount > 0) {
-          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 #' + pollCount + ' (缓存: ' + fullList.length + ')';
-        } else {
-          if (syncStatus) syncStatus.textContent = '无新消息 #' + pollCount + ' (缓存: ' + fullList.length + ')';
-        }
+          if (newCount > 0) {
+            if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 (缓存: ' + fullList.length + ')';
+          }
 
-        if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+          if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
       } catch (e) {
-        if (syncStatus) syncStatus.textContent = '错误: ' + e.message;
+        // 静默跳过错误
       }
-    }, 3000);
+    };
+
+    eventSource.onerror = () => {
+      if (syncStatus) syncStatus.textContent = 'SSE连接错误';
+    };
+
+    if (syncStatus) syncStatus.textContent = 'SSE已连接';
+  }
+
+  function stopAutoRefresh() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
   }
 
   // ---------- Send Message ----------
