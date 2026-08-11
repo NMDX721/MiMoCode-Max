@@ -291,19 +291,20 @@
           const sessionId = payload.properties?.sessionID;
           if (sessionId !== currentSessionId) return;
 
-          // 检测到变化，获取最新消息
+          // 检测到变化
           if (syncStatus) syncStatus.textContent = '检测到变化...';
 
-          // 获取完整列表并更新缓存
-          const fullMsgs = await window.mimo.getMessages(currentSessionId);
-          const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
-          messageCache[currentSessionId] = fullList;
+          // 获取最新消息（使用 getMessagesLight 获取最后几条）
+          const lightMsgs = await window.mimo.getMessagesLight(currentSessionId);
+          const lightList = Array.isArray(lightMsgs) ? lightMsgs : [];
+
+          if (lightList.length === 0) return;
 
           const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
           // 增量追加新消息
           let newCount = 0;
-          for (const msg of fullList) {
+          for (const msg of lightList) {
             const msgId = msg.info?.id;
             if (msgId && !renderedMsgIds.has(msgId)) {
               renderMessageParts(msg);
@@ -313,7 +314,9 @@
           }
 
           if (newCount > 0) {
-            if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息 (缓存: ' + fullList.length + ')';
+            if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息';
+          } else {
+            if (syncStatus) syncStatus.textContent = 'SSE已连接 (无新消息)';
           }
 
           if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
