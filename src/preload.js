@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('mimo', {
   // Stream events
   onStreamChunk: (cb) => ipcRenderer.on('stream:chunk', (_, data) => cb(data)),
 
+  // SSE events (from main process)
+  startSSE: (sessionId) => ipcRenderer.invoke('sse:start', sessionId),
+  stopSSE: () => ipcRenderer.invoke('sse:stop'),
+  onSSEMessageEvent: (cb) => ipcRenderer.on('sse:message-event', (_, data) => cb(data)),
+  onSSESessionIdle: (cb) => ipcRenderer.on('sse:session-idle', (_, data) => cb(data)),
+
   // Window controls
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

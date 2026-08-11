@@ -7,8 +7,7 @@
   let isStreaming = false;
   let refreshTimer = null;
   let renderedMsgIds = new Set();
-  let messageCache = {}; // { sessionId: [messages] }
-  let eventSource = null; // SSE connection
+  let lastRenderedMsgId = '';
 
   // ---------- DOM ----------
   const $ = (s) => document.querySelector(s);
@@ -265,83 +264,74 @@
     return div;
   }
 
-  // ---------- Auto-refresh (SSE-based) ----------
+  // ---------- Auto-refresh (SSE via main process) ----------
   function startAutoRefresh() {
     const syncStatus = document.getElementById('sync-status');
 
-    // 关闭旧连接
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
+    // 启动主进程 SSE 连接
+    window.mimo.startSSE(currentSessionId);
 
-    // 连接 SSE
-    const serverUrl = localStorage.getItem('mimo-server-url') || 'http://127.0.0.1:4096';
-    eventSource = new EventSource(serverUrl + '/global/event');
-
-    eventSource.onmessage = async (event) => {
+    // 监听消息事件
+    window.mimo.onSSEMessageEvent(async (event) => {
       if (!currentSessionId || isStreaming) return;
+      if (event.sessionId !== currentSessionId) return;
+
+      // 检测到变化，获取最新消息
+      if (syncStatus) syncStatus.textContent = '检测到变化...';
 
       try {
-        const data = JSON.parse(event.data);
-        const payload = data.payload;
+        const lightMsgs = await window.mimo.getMessagesLight(currentSessionId);
+        const lightList = Array.isArray(lightMsgs) ? lightMsgs : [];
+        if (lightList.length === 0) return;
 
-        // 只处理消息相关事件
-        if (payload?.type === 'message.part.updated' || payload?.type === 'message.created') {
-          const sessionId = payload.properties?.sessionID;
-          if (sessionId !== currentSessionId) return;
+        const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
 
-          // 检测到变化
-          if (syncStatus) syncStatus.textContent = '检测到变化...';
-
-          // 获取最新消息（使用 getMessagesLight 获取最后几条）
-          const lightMsgs = await window.mimo.getMessagesLight(currentSessionId);
-          const lightList = Array.isArray(lightMsgs) ? lightMsgs : [];
-
-          if (lightList.length === 0) return;
-
-          const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-
-          // 增量追加新消息
-          let newCount = 0;
-          for (const msg of lightList) {
-            const msgId = msg.info?.id;
-            if (msgId && !renderedMsgIds.has(msgId)) {
-              renderMessageParts(msg);
-              renderedMsgIds.add(msgId);
-              newCount++;
-            }
+        let newCount = 0;
+        for (const msg of lightList) {
+          const msgId = msg.info?.id;
+          if (msgId && !renderedMsgIds.has(msgId)) {
+            renderMessageParts(msg);
+            renderedMsgIds.add(msgId);
+            newCount++;
           }
-
-          if (newCount > 0) {
-            if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息';
-          } else {
-            if (syncStatus) syncStatus.textContent = 'SSE已连接 (无新消息)';
-          }
-
-          if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
         }
-      } catch (e) {
-        // 静默跳过错误
-      }
-    };
 
-    eventSource.onerror = () => {
-      if (syncStatus) syncStatus.textContent = 'SSE连接错误';
-    };
+        if (newCount > 0) {
+          if (syncStatus) syncStatus.textContent = '已渲染 ' + newCount + ' 条新消息';
+        }
+
+        if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+      } catch (e) {}
+    });
+
+    // 监听会话空闲事件（回复完成）
+    window.mimo.onSSESessionIdle(async (event) => {
+      if (!currentSessionId || event.sessionId !== currentSessionId) return;
+      // 回复完成，获取完整消息列表
+      try {
+        const fullMsgs = await window.mimo.getMessages(currentSessionId);
+        const fullList = Array.isArray(fullMsgs) ? fullMsgs : [];
+        const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+
+        for (const msg of fullList) {
+          const msgId = msg.info?.id;
+          if (msgId && !renderedMsgIds.has(msgId)) {
+            renderMessageParts(msg);
+            renderedMsgIds.add(msgId);
+          }
+        }
+
+        if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+      } catch (e) {}
+
+      if (syncStatus) syncStatus.textContent = '回复完成';
+    });
 
     if (syncStatus) syncStatus.textContent = 'SSE已连接';
   }
 
   function stopAutoRefresh() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    if (refreshTimer) {
-      clearInterval(refreshTimer);
-      refreshTimer = null;
-    }
+    window.mimo.stopSSE();
   }
 
   // ---------- Send Message ----------

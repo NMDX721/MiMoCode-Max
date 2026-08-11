@@ -188,6 +188,106 @@ ipcMain.handle('api:get-server-url', () => api.baseUrl);
 // Cache operations
 ipcMain.handle('cache:get-messages', (_, sessionId) => cache.getMessages(sessionId));
 
+// ---------- SSE Event Stream (Main Process) ----------
+let sseConnection = null;
+let sseSessionId = null;
+
+function startSSE(sessionId) {
+  stopSSE();
+  sseSessionId = sessionId;
+
+  const http = require('http');
+  const url = new URL('/global/event', api.baseUrl);
+
+  const options = {
+    hostname: url.hostname,
+    port: url.port,
+    path: url.pathname,
+    method: 'GET',
+    headers: {
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    }
+  };
+
+  sseConnection = http.request(options, (res) => {
+    let buffer = '';
+
+    res.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const payload = data.payload;
+
+            // 转发消息相关事件到渲染进程
+            if (payload?.type === 'message.part.updated' || payload?.type === 'message.created') {
+              const eventSessionId = payload.properties?.sessionID;
+              if (eventSessionId === sseSessionId && mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('sse:message-event', {
+                  type: payload.type,
+                  sessionId: eventSessionId,
+                  part: payload.properties?.part,
+                  info: payload.properties?.info
+                });
+              }
+            }
+
+            // 会话空闲事件（回复完成）
+            if (payload?.type === 'session.idle' || payload?.type === 'session.status') {
+              const eventSessionId = payload.properties?.sessionID;
+              if (eventSessionId === sseSessionId && mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('sse:session-idle', { sessionId: eventSessionId });
+              }
+            }
+          } catch {}
+        }
+      }
+    });
+
+    res.on('end', () => {
+      // 连接断开，5秒后重连
+      if (sseSessionId) {
+        setTimeout(() => startSSE(sseSessionId), 5000);
+      }
+    });
+  });
+
+  sseConnection.on('error', () => {
+    // 连接错误，5秒后重连
+    if (sseSessionId) {
+      setTimeout(() => startSSE(sseSessionId), 5000);
+    }
+  });
+
+  sseConnection.setTimeout(0);
+  sseConnection.end();
+  log('[SSE] Connected to event stream for session:', sessionId);
+}
+
+function stopSSE() {
+  if (sseConnection) {
+    sseConnection.destroy();
+    sseConnection = null;
+  }
+  sseSessionId = null;
+}
+
+ipcMain.handle('sse:start', (_, sessionId) => {
+  startSSE(sessionId);
+  return true;
+});
+
+ipcMain.handle('sse:stop', () => {
+  stopSSE();
+  return true;
+});
+
 // Window controls
 ipcMain.on('window:minimize', () => mainWindow && mainWindow.minimize());
 ipcMain.on('window:maximize', () => {
