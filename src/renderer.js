@@ -793,11 +793,23 @@
   function updateQueueButton() {
     const queueInfo = $('#queue-info');
     const queueCount = $('#queue-count');
+    const queuePreview = $('#queue-preview');
+    const insertBtn = $('#btn-insert-queue');
     if (messageQueue.length > 0) {
       queueInfo.classList.remove('hidden');
       queueCount.textContent = messageQueue.length;
+      // 预览最新一条排队消息
+      const latest = messageQueue[messageQueue.length - 1];
+      if (queuePreview && latest) {
+        const preview = (typeof latest === 'string' ? latest : latest.content || '').replace(/\s+/g, ' ').trim();
+        queuePreview.textContent = preview ? '「' + preview.substring(0, 30) + (preview.length > 30 ? '…' : '') + '」' : '';
+        queuePreview.title = messageQueue.map(m => (typeof m === 'string' ? m : m.content || '')).join('\n---\n');
+      }
+      // 更新按钮提示
+      if (insertBtn) insertBtn.title = '打断当前任务，立即发送 ' + messageQueue.length + ' 条排队消息';
     } else {
       queueInfo.classList.add('hidden');
+      if (queuePreview) { queuePreview.textContent = ''; queuePreview.title = ''; }
     }
   }
 
