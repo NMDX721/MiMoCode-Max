@@ -7,11 +7,18 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// 调试日志函数 - 写入文件
+// 调试日志函数 - 写入文件（带旋转）
 const logFile = path.join(process.env.USERPROFILE || '', '.mimocode_home', 'max-debug.log');
+const MAX_LOG_SIZE = 1024 * 1024; // 1MB
 function safeLog(...args) {
   const msg = new Date().toISOString() + ' [Server] ' + args.join(' ') + '\n';
-  try { fs.appendFileSync(logFile, msg); } catch {}
+  try {
+    // 旋转日志
+    if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_LOG_SIZE) {
+      fs.renameSync(logFile, logFile + '.old');
+    }
+    fs.appendFileSync(logFile, msg);
+  } catch {}
   try { console.log(msg.trim()); } catch {}
 }
 
