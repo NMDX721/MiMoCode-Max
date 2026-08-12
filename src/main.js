@@ -298,13 +298,33 @@ ipcMain.on('window:open-external', (_, url) => shell.openExternal(url));
 
 // ---------- App lifecycle ----------
 app.whenReady().then(async () => {
-  await serverManager.start();
+  log('[App] Starting MiMo Code - Max...');
+
+  // 检查并关闭 TUI，确保 Max 独占 API
+  if (serverManager.isTuiRunning()) {
+    log('[App] TUI detected, terminating for exclusive access...');
+    serverManager.killTui();
+    // 等待端口释放
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  // 启动 headless server
+  const serverStarted = await serverManager.start();
+  if (serverStarted) {
+    log('[App] Server started successfully');
+  } else {
+    log('[App] Warning: Server failed to start');
+  }
+
   createWindow();
   createTray();
 });
+
 app.on('window-all-closed', () => {
+  log('[App] Shutting down...');
   serverManager.stop();
   if (tray) tray.destroy();
   app.quit();
 });
+
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
