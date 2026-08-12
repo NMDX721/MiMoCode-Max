@@ -896,6 +896,13 @@
     const bgImage = localStorage.getItem('mimo-bg-image') || '';
     const customCss = localStorage.getItem('mimo-custom-css') || '';
 
+    // 启动时同步保存的端口到 main 进程
+    const savedPort = parseInt(localStorage.getItem('mimo-server-port')) || 4096;
+    if ($('#setting-server-port')) {
+      $('#setting-server-port').value = savedPort;
+    }
+    window.mimo.updateServerConfig({ port: savedPort }).catch(() => {});
+
     $('#titlebar-title').textContent = title;
     document.title = title;
     document.body.className = theme === 'dark' ? 'theme-dark' : '';
@@ -1178,6 +1185,7 @@
 
     btnSave.addEventListener('click', async () => {
       const serverUrl = $('#setting-server-url').value.trim();
+      const serverPort = parseInt($('#setting-server-port').value) || 4096;
       const appTitle = $('#setting-app-title').value.trim() || 'MiMo Code - Max';
       const theme = $('#setting-theme').value;
       const fontSize = $('#setting-font-size').value;
@@ -1187,6 +1195,10 @@
       const logoImage = $('#setting-logo-image').value.trim();
       const customCss = $('#setting-custom-css').value;
 
+      // 同步端口到 main 进程
+      if (serverPort) {
+        await window.mimo.updateServerConfig({ port: serverPort });
+      }
       if (serverUrl) {
         await window.mimo.setServerUrl(serverUrl);
       }
@@ -1198,7 +1210,7 @@
       localStorage.setItem('mimo-bg-image', bgImage);
       localStorage.setItem('mimo-logo-image', logoImage);
       localStorage.setItem('mimo-custom-css', customCss);
-      localStorage.setItem('mimo-server-port', $('#setting-server-port').value);
+      localStorage.setItem('mimo-server-port', serverPort.toString());
       localStorage.setItem('mimo-auto-start-server', $('#setting-auto-start-server').checked.toString());
 
       applySettings();

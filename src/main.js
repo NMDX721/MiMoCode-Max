@@ -108,6 +108,15 @@ ipcMain.handle('api:send-message', async (_, { sessionId, content, agent, images
   return await api.sendMessage(sessionId, content, agent, images);
 });
 ipcMain.handle('api:set-server-url', (_, url) => { api.setUrl(url); return true; });
+ipcMain.handle('api:update-server-config', (_, { port }) => {
+  // 更新 serverManager 的端口
+  serverManager.port = port || 4096;
+  serverManager.baseUrl = `http://127.0.0.1:${serverManager.port}`;
+  // 更新 api 客户端
+  api.setUrl(`http://127.0.0.1:${serverManager.port}`);
+  log('[App] Server config updated: port', serverManager.port);
+  return true;
+});
 ipcMain.handle('api:get-server-url', () => api.baseUrl);
 ipcMain.handle('api:abort-message', (_, sessionId) => api.abortMessage(sessionId));
 ipcMain.handle('api:get-logs', () => {
@@ -313,9 +322,6 @@ app.whenReady().then(async () => {
   log('[App] Starting MiMo Code - Max...');
   log('[App] Time:', new Date().toISOString());
   log('========================================');
-
-  // 关键改变：不再杀死 TUI，而是连接到它的 server
-  // TUI 启动时会自动启动 server，Max 只需要连接
 
   // 启动或连接到 server
   log('[App] Calling serverManager.start()...');

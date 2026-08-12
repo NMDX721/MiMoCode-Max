@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('mimo', {
   getConfig: () => ipcRenderer.invoke('api:get-config'),
   setServerUrl: (url) => ipcRenderer.invoke('api:set-server-url', url),
   getServerUrl: () => ipcRenderer.invoke('api:get-server-url'),
+  updateServerConfig: (config) => ipcRenderer.invoke('api:update-server-config', config),
 
   // Logs
   getLogs: () => ipcRenderer.invoke('api:get-logs'),
