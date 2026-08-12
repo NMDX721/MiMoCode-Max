@@ -269,9 +269,10 @@
         userMsgIds.add(messageID);
         return;
       }
-      // Only create containers for ASSISTANT messages
-      const role = info?.role;
-      if (role === 'user' || !role) return;
+      // Skip user messages explicitly marked
+      if (info?.role === 'user') return;
+      // Create container for new messages (assistant or unknown role)
+      const role = info?.role || 'assistant';
       container = document.createElement('div');
       container.className = `message ${role}`;
       container.dataset.msgId = messageID;
@@ -510,15 +511,18 @@
     startStreamingFetch();
     try {
       await window.mimo.sendMessage(currentSessionId, content, currentAgent, images.map(i => ({ data: i.data, mime: i.mime })));
-      // Fetch real message ID and update
+      // Fetch real message ID and update — match by position (N-th pending = N-th user msg)
       try {
         const msgs = await window.mimo.getMessages(currentSessionId);
         const list = Array.isArray(msgs) ? msgs : [];
-        const lastUser = list.filter(m => m.info?.role === 'user').pop();
-        if (lastUser?.info?.id) {
+        const userMsgs = list.filter(m => m.info?.role === 'user');
+        const pendingDivs = messagesEl.querySelectorAll('.message.user[data-msg-id^="pending-"]');
+        const idx = Array.from(pendingDivs).indexOf(userDiv);
+        const match = idx >= 0 ? userMsgs[idx] : userMsgs[userMsgs.length - 1];
+        if (match?.info?.id) {
           userMsgIds.delete(tempId);
-          userMsgIds.add(lastUser.info.id);
-          userDiv.dataset.msgId = lastUser.info.id;
+          userMsgIds.add(match.info.id);
+          userDiv.dataset.msgId = match.info.id;
         }
       } catch {}
     }
