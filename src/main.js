@@ -84,16 +84,8 @@ ipcMain.handle('api:create-session', (_, data) => api.createSession(data));
 ipcMain.handle('api:update-session', (_, { id, data }) => api.updateSession(id, data));
 ipcMain.handle('api:delete-session', (_, id) => api.deleteSession(id));
 ipcMain.handle('api:send-message', async (_, { sessionId, content, agent, images }) => {
-  for (let i = 0; i < 30; i++) {
-    try { return await api.sendMessage(sessionId, content, agent, images); }
-    catch (e) {
-      if (e.message === 'busy' && i < 29) {
-        await new Promise(r => setTimeout(r, 1000)); // Wait 1 second between retries
-        continue;
-      }
-      throw e;
-    }
-  }
+  // 只发一次，不重试。排队由 renderer.js 的事件驱动队列处理
+  return await api.sendMessage(sessionId, content, agent, images);
 });
 ipcMain.handle('api:set-server-url', (_, url) => { api.setUrl(url); return true; });
 ipcMain.handle('api:get-server-url', () => api.baseUrl);

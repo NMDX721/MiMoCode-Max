@@ -14,6 +14,7 @@
   let streamingFetchTimer = null;
   const userMsgIds = new Set(); // Track client-sent message IDs to prevent SSE duplicates
   const messageQueue = []; // Message queue for when API is busy
+  let queuedImages = []; // 排队消息附带的图片
 
   const $ = (s) => document.querySelector(s);
   const sessionList = $('#session-list');
@@ -53,6 +54,7 @@
     // Clear queue when switching sessions
     if (messageQueue.length > 0) {
       messageQueue.length = 0;
+      queuedImages.length = 0;
       updateQueueButton();
     }
     pendingNewChat = false;
@@ -586,46 +588,15 @@
     setTimeout(() => processMessageQueue(), 1000);
   }
 
-  // Process message queue - 事件驱动，等待 idle 事件
-  async function processMessageQueue() {
-    // 如果正在流式输出或队列为空，不处理
-    if (messageQueue.length === 0 || isStreaming) return;
-
-    const next = messageQueue.shift();
-    showNotification('正在发送消息...');
-    updateQueueButton();
-
-    // 创建用户消息 div
-    const userDiv = document.createElement('div');
-    userDiv.className = 'message user';
-    const tempId = 'pending-' + Date.now();
-    userDiv.dataset.msgId = tempId;
-    userMsgIds.add(tempId);
-    const textDiv = document.createElement('div');
-    textDiv.innerHTML = fmt(next.content);
-    userDiv.appendChild(textDiv);
-    if (next.images) {
-      for (const img of next.images) {
-        const imgEl = document.createElement('img');
-        imgEl.src = img.data;
-        imgEl.style.maxWidth = '300px';
-        imgEl.style.borderRadius = '8px';
-        imgEl.style.marginTop = '8px';
-        imgEl.addEventListener('click', () => openImageZoom(img.data, img.name));
-        userDiv.appendChild(imgEl);
-      }
-    }
-
-    messagesEl.appendChild(userDiv);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-
+  // 统一的发送函数，供 sendMessage 和 processMessageQueue 使用
+  async function doSendMessage(content, images, userDiv, tempId) {
     isStreaming = true;
     stopRequested = false;
     delete messageCache[currentSessionId];
     startStreamingFetch();
 
     try {
-      await window.mimo.sendMessage(currentSessionId, next.content, currentAgent, (next.images || []).map(i => ({ data: i.data, mime: i.mime })));
+      await window.mimo.sendMessage(currentSessionId, content, currentAgent, (images || []).map(i => ({ data: i.data, mime: i.mime })));
       // 获取真实消息 ID
       try {
         const msgs = await window.mimo.getMessages(currentSessionId);
@@ -644,13 +615,13 @@
     catch (err) {
       removeLoading();
       if (err.message === 'busy') {
-        // 收到 busy 错误，放回队列，等待 idle 事件
         userDiv.remove();
         userMsgIds.delete(tempId);
-        messageQueue.unshift(next);
-        showNotification(`API 忙碌，等待空闲后发送 (队列: ${messageQueue.length})`);
+        // 如果发送失败，合并到队列中
+        messageQueue.push(content);
+        if (images?.length) queuedImages.push(...images);
+        showNotification(`API 忙碌，合并到排队消息 (队列: ${messageQueue.length})`);
         updateQueueButton();
-        // 不再立即重试，等待 session.idle 事件触发 processMessageQueue
       } else {
         const e = document.createElement('div');
         e.className = 'message assistant';
@@ -660,15 +631,58 @@
     }
     finally {
       isStreaming = false;
-      // 如果队列中还有消息，等待 idle 事件（不主动重试）
-      // processMessageQueue 会在 session.idle 事件中被调用
     }
+  }
+
+  // Process message queue - 事件驱动，合并所有排队消息为一条
+  async function processMessageQueue() {
+    if (messageQueue.length === 0 || isStreaming) return;
+
+    // 合并所有排队消息为一条
+    const mergedContent = messageQueue.join('\n---\n');
+    const mergedImages = [...queuedImages];
+    messageQueue.length = 0;
+    queuedImages.length = 0;
+    updateQueueButton();
+
+    // 如果合并后内容为空，直接返回
+    if (!mergedContent.trim()) return;
+
+    showNotification('正在发送合并消息...');
+
+    // 创建用户消息 div
+    const userDiv = document.createElement('div');
+    userDiv.className = 'message user';
+    const tempId = 'pending-' + Date.now();
+    userDiv.dataset.msgId = tempId;
+    userMsgIds.add(tempId);
+    const textDiv = document.createElement('div');
+    const lines = mergedContent.split('\n');
+    textDiv.innerHTML = fmt(lines.map(l => `<div>${esc(l)}</div>`).join(''));
+    userDiv.appendChild(textDiv);
+    if (mergedImages.length) {
+      for (const img of mergedImages) {
+        const imgEl = document.createElement('img');
+        imgEl.src = img.data;
+        imgEl.style.maxWidth = '300px';
+        imgEl.style.borderRadius = '8px';
+        imgEl.style.marginTop = '8px';
+        imgEl.addEventListener('click', () => openImageZoom(img.data, img.name));
+        userDiv.appendChild(imgEl);
+      }
+    }
+
+    messagesEl.appendChild(userDiv);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    await doSendMessage(mergedContent, mergedImages, userDiv, tempId);
   }
 
   // Cancel queued messages
   function cancelQueue() {
     const count = messageQueue.length;
     messageQueue.length = 0;
+    queuedImages.length = 0;
     updateQueueButton();
     if (count > 0) {
       showNotification(`已取消 ${count} 条排队消息`);
@@ -741,10 +755,11 @@
       });
       userDiv.appendChild(imgEl);
     }
-    // If already streaming, add to queue (don't show message yet)
+    // If already streaming, merge into queue (不创建独立消息 div)
     if (isStreaming) {
-      messageQueue.push({ content, images });
-      showNotification(`消息已排队 (队列: ${messageQueue.length})`);
+      messageQueue.push(content);
+      if (images.length > 0) queuedImages.push(...images);
+      showNotification(`消息已排队，将合并发送 (队列: ${messageQueue.length})`);
       updateQueueButton();
       return;
     }
@@ -752,49 +767,7 @@
     messagesEl.appendChild(userDiv);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    isStreaming = true;
-    stopRequested = false;
-    delete messageCache[currentSessionId];
-    startStreamingFetch();
-    try {
-      await window.mimo.sendMessage(currentSessionId, content, currentAgent, images.map(i => ({ data: i.data, mime: i.mime })));
-      // Fetch real message ID and update — match by position (N-th pending = N-th user msg)
-      try {
-        const msgs = await window.mimo.getMessages(currentSessionId);
-        const list = Array.isArray(msgs) ? msgs : [];
-        const userMsgs = list.filter(m => m.info?.role === 'user');
-        const pendingDivs = messagesEl.querySelectorAll('.message.user[data-msg-id^="pending-"]');
-        const idx = Array.from(pendingDivs).indexOf(userDiv);
-        const match = idx >= 0 ? userMsgs[idx] : userMsgs[userMsgs.length - 1];
-        if (match?.info?.id) {
-          userMsgIds.delete(tempId);
-          userMsgIds.add(match.info.id);
-          userDiv.dataset.msgId = match.info.id;
-        }
-      } catch {}
-    }
-    catch (err) {
-      removeLoading();
-      // If busy, remove user message and add to queue
-      if (err.message === 'busy') {
-        userDiv.remove();
-        userMsgIds.delete(tempId);
-        messageQueue.unshift({ content, images });
-        showNotification(`API 忙碌，等待空闲后发送 (队列: ${messageQueue.length})`);
-        updateQueueButton();
-        // 不在这里重试，等待 session.idle 事件触发 processMessageQueue
-      } else {
-        const e = document.createElement('div');
-        e.className = 'message assistant';
-        e.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`;
-        messagesEl.appendChild(e);
-      }
-    }
-    finally {
-      isStreaming = false;
-      // 注意：不在这里调用 processMessageQueue
-      // 等待 session.idle 事件触发，确保 API 真正空闲
-    }
+    await doSendMessage(content, images, userDiv, tempId);
   }
 
   // Update queue button visibility
