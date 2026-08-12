@@ -361,7 +361,12 @@
         autoScroll();
       } catch {}
       // Process queued messages after session becomes idle
-      processMessageQueue();
+      if (insertPending) {
+        insertPending = false;
+        processMessageQueue();
+      } else {
+        processMessageQueue();
+      }
     });
   }
 
@@ -690,15 +695,14 @@
   }
 
   // 立即插入：打断当前任务，发送排队消息
+  let insertPending = false; // 等待 idle 事件后处理插入
   async function insertQueue() {
     if (messageQueue.length === 0 || !currentSessionId) return;
     showNotification('正在打断当前任务...');
     try {
       await window.mimo.interruptMessage(currentSessionId);
-      // 等待 session 变为 idle
-      await new Promise(r => setTimeout(r, 1500));
-      // 处理队列
-      processMessageQueue();
+      insertPending = true; // 设置标记，等待 session.idle 事件
+      showNotification('已打断，等待任务停止后发送...');
     } catch (err) {
       showNotification('打断失败: ' + err.message);
     }
