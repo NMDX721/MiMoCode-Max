@@ -530,11 +530,6 @@
       userDiv.appendChild(imgEl);
     }
     messagesEl.appendChild(userDiv);
-
-    loadingEl = document.createElement('div');
-    loadingEl.className = 'message assistant loading-indicator';
-    loadingEl.innerHTML = '<div class="loading"><div class="spinner"></div>Thinking...</div>';
-    messagesEl.appendChild(loadingEl);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
     isStreaming = true;
