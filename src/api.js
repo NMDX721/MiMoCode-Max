@@ -48,17 +48,22 @@ class ApiClient {
   getSessions() { return this.request('GET', '/session'); }
   getSession(id) { return this.request('GET', `/session/${id}`); }
   getMessages(sessionId) { return this.request('GET', `/session/${sessionId}/message`); }
-  getMessagesLight(sessionId) { return this.request('GET', `/session/${sessionId}/message?limit=5`); }
-  syncHistory(body) { return this.request('POST', '/sync/history', body); }
   getConfig() { return this.request('GET', '/config'); }
 
   createSession(data) { return this.request('POST', '/session', data); }
 
-  sendMessage(sessionId, content, agent) {
-    return this.request('POST', `/session/${sessionId}/message`, {
-      parts: [{ type: 'text', text: content }],
-      agent: agent || 'compose',
-    });
+  sendMessage(sessionId, content, agent, images) {
+    const parts = [{ type: 'text', text: content }];
+    if (Array.isArray(images)) {
+      for (const img of images) {
+        // API expects "mime" field (not "mediaType")
+        const mime = img.mime || 'image/png';
+        const url = img.data || img;
+        parts.push({ type: 'file', mime, url });
+      }
+    }
+    const body = { parts, agent: agent || 'compose' };
+    return this.request('POST', `/session/${sessionId}/message`, body);
   }
 
   deleteSession(id) { return this.request('DELETE', `/session/${id}`); }

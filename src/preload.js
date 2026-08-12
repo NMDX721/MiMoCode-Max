@@ -1,23 +1,20 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('mimo', {
-  // API
+  // Sessions
   getSessions: () => ipcRenderer.invoke('api:get-sessions'),
   getSession: (id) => ipcRenderer.invoke('api:get-session', id),
-  getMessages: (sessionId) => ipcRenderer.invoke('api:get-messages', sessionId),
-  getMessagesLight: (sessionId) => ipcRenderer.invoke('api:get-messages-light', sessionId),
-  getSyncEvents: (sessionId) => ipcRenderer.invoke('api:sync-events', sessionId),
-  resetSync: (sessionId) => ipcRenderer.invoke('api:sync-reset', sessionId),
-  getConfig: () => ipcRenderer.invoke('api:get-config'),
   createSession: (data) => ipcRenderer.invoke('api:create-session', data),
-  sendMessage: (sessionId, content, agent) => ipcRenderer.invoke('api:send-message', { sessionId, content, agent }),
   deleteSession: (id) => ipcRenderer.invoke('api:delete-session', id),
-  streamMessages: (sessionId) => ipcRenderer.invoke('api:stream-messages', sessionId),
+
+  // Messages
+  getMessages: (sessionId) => ipcRenderer.invoke('api:get-messages', sessionId),
+  sendMessage: (sessionId, content, agent, images) => ipcRenderer.invoke('api:send-message', { sessionId, content, agent, images }),
+
+  // Config
+  getConfig: () => ipcRenderer.invoke('api:get-config'),
   setServerUrl: (url) => ipcRenderer.invoke('api:set-server-url', url),
   getServerUrl: () => ipcRenderer.invoke('api:get-server-url'),
-
-  // Stream events
-  onStreamChunk: (cb) => ipcRenderer.on('stream:chunk', (_, data) => cb(data)),
 
   // SSE events (from main process)
   startSSE: (sessionId) => ipcRenderer.invoke('sse:start', sessionId),

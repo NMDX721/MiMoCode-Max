@@ -16,7 +16,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -29,7 +31,9 @@
       "assets/**/*"
     ]
   },
-  "dependencies": {},
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.18.16"
+  },
   "devDependencies": {
     "electron": "^41.10.2",
     "electron-builder": "^26.8.1"
