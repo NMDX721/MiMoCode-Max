@@ -264,6 +264,9 @@
     // Skip if already rendered (prevents duplicates from V1 SSE without role info)
     if (renderedMsgIds.has(messageID)) return;
 
+    // Skip step-start/step-finish (these don't produce visible content)
+    if (part.type === 'step-start' || part.type === 'step-finish') return;
+
     // Find existing message container by messageID
     let container = messagesEl.querySelector(`[data-msg-id="${messageID}"]`);
 
@@ -286,9 +289,6 @@
       messagesEl.appendChild(container);
       renderedMsgIds.add(messageID);
     }
-
-    // Skip step-start/step-finish
-    if (part.type === 'step-start' || part.type === 'step-finish') return;
 
     // When a tool event arrives, mark any streaming thinking in this message as done
     if (part.type === 'tool') {
