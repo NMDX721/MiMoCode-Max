@@ -9,10 +9,30 @@ const serverManager = new ServerManager();
 
 // ---------- Logging ----------
 const logFile = path.join(app.getPath('userData'), 'debug.log');
+const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5MB max
+
 function log(...args) {
   const msg = new Date().toISOString() + ' ' + args.join(' ') + '\n';
-  fs.appendFileSync(logFile, msg);
-  console.log(msg.trim());
+  try {
+    // Rotate log if too large
+    if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_LOG_SIZE) {
+      fs.renameSync(logFile, logFile + '.old');
+    }
+    fs.appendFileSync(logFile, msg);
+  } catch {}
+  try { console.log(msg.trim()); } catch {}
+}
+
+// SSE event log throttling - only log first event of each type
+let sseLogCount = 0;
+const sseLogTypes = new Set();
+function logSSE(eventType, data) {
+  sseLogCount++;
+  // Log first 5 events of each type, then stop
+  if (sseLogCount < 50 || !sseLogTypes.has(eventType)) {
+    sseLogTypes.add(eventType);
+    log('[SSE] Event:', eventType, JSON.stringify(data).substring(0, 100));
+  }
 }
 
 // ---------- Startup ----------
@@ -174,7 +194,6 @@ function connectSSE() {
         if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (!data._logged) { log('[SSE] Raw event:', JSON.stringify(data).substring(0, 300)); data._logged = true; }
           handleSSEEvent(data);
         } catch {}
       }
@@ -211,10 +230,10 @@ function handleSSEEvent(data) {
     || data.properties?.info?.sessionID
     || data.properties?.part?.sessionID;
 
-  log('[SSE] Event:', eventType, 'session:', eventSessionId, 'current:', sseSessionId);
+  logSSE(eventType, data);
 
   if (!eventSessionId || eventSessionId !== sseSessionId) return;
-  if (!mainWindow || mainWindow.isDestroyed()) { log('[SSE] No window!'); return; }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
 
   if (eventType === 'message.part.updated' || eventType === 'message.updated' || eventType === 'message.part.delta') {
     // Handle delta events differently - they have delta/field, not part
