@@ -1023,3 +1023,26 @@ body.theme-dark {
   color: #fff;
   font-size: 12px;
 }
+
+/* Connection Status */
+#connection-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: 8px;
+}
+
+.status-connected {
+  background: var(--success);
+  color: white;
+}
+
+.status-disconnected {
+  background: var(--danger);
+  color: white;
+}
+
+.status-connecting {
+  background: var(--accent);
+  color: white;
+}

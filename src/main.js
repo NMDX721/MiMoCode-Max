@@ -4,6 +4,8 @@ const fs = require('fs');
 const http = require('http');
 const ApiClient = require('./api');
 const Cache = require('./cache');
+const ServerManager = require('./server');
+const serverManager = new ServerManager();
 
 // ---------- Logging ----------
 const logFile = path.join(app.getPath('userData'), 'debug.log');
@@ -109,6 +111,26 @@ ipcMain.handle('api:get-logs', () => {
   } catch { return ''; }
 });
 
+ipcMain.handle('api:get-server-logs', async () => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'server.log');
+    if (fs.existsSync(logPath)) {
+      return fs.readFileSync(logPath, 'utf8');
+    }
+    return 'No server logs available';
+  } catch {
+    return 'Failed to read server logs';
+  }
+});
+
+ipcMain.handle('server:status', async () => {
+  return await serverManager.isRunning();
+});
+ipcMain.handle('server:restart', async () => {
+  serverManager.stop();
+  return await serverManager.start();
+});
+
 // ---------- SSE: http.request on /event (V1 API) ----------
 let sseSessionId = null;
 let sseConnection = null;
@@ -142,7 +164,7 @@ function connectSSE() {
 
     if (res.statusCode !== 200) {
       res.resume();
-      scheduleReconnect(5000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
       return;
     }
 
@@ -150,7 +172,7 @@ function connectSSE() {
     let firstData = true;
 
     res.on('data', (chunk) => {
-      if (firstData) { log('[SSE] First data received'); firstData = false; }
+      if (firstData) { log('[SSE] First data received'); firstData = false; reconnectAttempts = 0; }
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -168,12 +190,12 @@ function connectSSE() {
     res.on('end', () => {
       log('[SSE] Connection ended');
       sseConnection = null;
-      scheduleReconnect(3000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     });
 
     res.on('error', () => {
       sseConnection = null;
-      scheduleReconnect(3000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     });
   });
 
@@ -181,7 +203,7 @@ function connectSSE() {
     if (!sseStopped) {
       log('[SSE] Error:', err.message);
       sseConnection = null;
-      scheduleReconnect(5000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     }
   });
 
@@ -244,10 +266,17 @@ function handleSSEEvent(data) {
   }
 }
 
+let reconnectAttempts = 0;
+
 function scheduleReconnect(ms) {
   if (sseStopped) return;
   if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
-  sseReconnectTimer = setTimeout(() => { if (!sseStopped && sseSessionId) connectSSE(); }, ms);
+  sseReconnectTimer = setTimeout(() => {
+    if (!sseStopped && sseSessionId) {
+      log('[SSE] Attempting reconnect...');
+      connectSSE();
+    }
+  }, ms);
 }
 
 function stopSSE() {
@@ -268,6 +297,14 @@ ipcMain.on('window:close', () => mainWindow && mainWindow.close());
 ipcMain.on('window:open-external', (_, url) => shell.openExternal(url));
 
 // ---------- App lifecycle ----------
-app.whenReady().then(() => { createWindow(); createTray(); });
-app.on('window-all-closed', () => { if (tray) tray.destroy(); app.quit(); });
+app.whenReady().then(async () => {
+  await serverManager.start();
+  createWindow();
+  createTray();
+});
+app.on('window-all-closed', () => {
+  serverManager.stop();
+  if (tray) tray.destroy();
+  app.quit();
+});
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
