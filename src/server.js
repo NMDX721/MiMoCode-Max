@@ -101,10 +101,12 @@ class ServerManager {
     safeLog('[Server] Starting server on port', this.port);
 
     return new Promise((resolve) => {
+      // 使用 shell: true 来确保能找到 mimo 命令（Electron 子进程没有用户 PATH）
       this.process = spawn('mimo', ['serve', '--port', String(this.port)], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
+        shell: true,  // 通过 shell 执行，这样能继承用户 PATH
       });
 
       this.process.unref();
