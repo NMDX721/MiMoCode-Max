@@ -261,6 +261,9 @@
     // Skip if this is a client-sent user message
     if (userMsgIds.has(messageID)) return;
 
+    // Skip if already rendered (prevents duplicates from V1 SSE without role info)
+    if (renderedMsgIds.has(messageID)) return;
+
     // Find existing message container by messageID
     let container = messagesEl.querySelector(`[data-msg-id="${messageID}"]`);
 
