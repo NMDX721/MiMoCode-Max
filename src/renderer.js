@@ -253,7 +253,12 @@
           container.dataset.msgId = id;
           for (const part of m.parts || []) {
             if (part.type === 'text' && part.text?.trim()) { const d = document.createElement('div'); d.className = 'msg-text'; d.innerHTML = fmt(part.text); container.appendChild(d); }
-            else if (part.type === 'reasoning' && part.text?.trim()) container.appendChild(createThinking(part.text, false));
+            else if (part.type === 'reasoning' && part.text?.trim()) {
+              // Skip reasoning if thinking block already exists in this container
+              if (!container.querySelector('.thinking')) {
+                container.appendChild(createThinking(part.text, false));
+              }
+            }
             else if (part.type === 'tool') container.appendChild(createTool(part));
             else if (part.type === 'file') container.appendChild(createFilePart(part));
           }
