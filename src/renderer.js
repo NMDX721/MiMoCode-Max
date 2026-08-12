@@ -204,6 +204,7 @@
 
     window.mimo.onSSESessionIdle(async (event) => {
       if (!currentSessionId || event.sessionId !== currentSessionId) return;
+      const mySessionId = currentSessionId; // capture at event time
       isStreaming = false;
       btnSend.disabled = false;
       removeLoading();
@@ -216,11 +217,13 @@
         if (content && !content.textContent.trim()) el.remove();
       });
       // Final fetch to ensure completeness — only add NEW messages, don't re-render existing
-      delete messageCache[currentSessionId];
+      delete messageCache[mySessionId];
       try {
-        const msgs = await window.mimo.getMessages(currentSessionId);
+        const msgs = await window.mimo.getMessages(mySessionId);
+        // Bail if user switched sessions during fetch
+        if (currentSessionId !== mySessionId) return;
         const list = Array.isArray(msgs) ? msgs : [];
-        messageCache[currentSessionId] = list;
+        messageCache[mySessionId] = list;
         for (const m of list) {
           const id = m.info?.id || '';
           const role = m.info?.role || 'assistant';
@@ -380,12 +383,13 @@
   // Periodic fetch during streaming — updates existing messages (断点续传)
   function startStreamingFetch() {
     stopStreamingFetch();
+    const mySessionId = currentSessionId;
     streamingFetchTimer = setInterval(async () => {
-      if (!currentSessionId) { stopStreamingFetch(); return; }
+      if (!currentSessionId || currentSessionId !== mySessionId) { stopStreamingFetch(); return; }
       try {
-        const msgs = await window.mimo.getMessages(currentSessionId);
+        const msgs = await window.mimo.getMessages(mySessionId);
         const list = Array.isArray(msgs) ? msgs : [];
-        messageCache[currentSessionId] = list;
+        messageCache[mySessionId] = list;
         // Update existing message elements, don't re-render all
         for (const m of list) {
           const id = m.info?.id || '';
