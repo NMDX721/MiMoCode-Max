@@ -262,8 +262,6 @@
       const info = event.info;
       const messageID = event.messageID || part?.messageID;
 
-      console.log('[SSE-EVENT] msgID:', messageID, 'role:', info?.role, 'partType:', part?.type, 'existing:', !!messagesEl.querySelector(`[data-msg-id="${messageID}"]`));
-
       if (part && messageID) {
         renderPartFromEvent(messageID, info, part);
         autoScroll();
