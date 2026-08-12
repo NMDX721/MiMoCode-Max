@@ -14,6 +14,7 @@
   const userMsgIds = new Set(); // Track client-sent message IDs to prevent SSE duplicates
   const messageQueue = []; // Message queue for when API is busy
   let queuedImages = []; // 排队消息附带的图片
+  let queueRetryTimer = null; // 兜底重试定时器（防止 SSE 断连导致队列卡死）
 
   const $ = (s) => document.querySelector(s);
   const sessionList = $('#session-list');
@@ -640,12 +641,25 @@
     }
     finally {
       isStreaming = false;
+      // 启动兜底重试：如果 10 秒内没有 idle 事件，强制重试队列
+      if (messageQueue.length > 0) {
+        if (queueRetryTimer) clearTimeout(queueRetryTimer);
+        queueRetryTimer = setTimeout(() => {
+          if (messageQueue.length > 0 && !isStreaming) {
+            showNotification('正在尝试发送排队消息...');
+            processMessageQueue();
+          }
+        }, 10000);
+      }
     }
   }
 
   // Process message queue - 事件驱动，合并所有排队消息为一条
   async function processMessageQueue() {
     if (messageQueue.length === 0 || isStreaming) return;
+
+    // 清除兜底定时器
+    if (queueRetryTimer) { clearTimeout(queueRetryTimer); queueRetryTimer = null; }
 
     // 合并所有排队消息为一条
     const mergedContent = messageQueue.join('\n---\n');
