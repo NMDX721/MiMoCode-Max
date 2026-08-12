@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('mimo', {
 
   // Logs
   getLogs: () => ipcRenderer.invoke('api:get-logs'),
+  getServerLogs: () => ipcRenderer.invoke('api:get-server-logs'),
 
   // SSE events (from main process)
   startSSE: (sessionId) => ipcRenderer.invoke('sse:start', sessionId),

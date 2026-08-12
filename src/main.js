@@ -111,6 +111,18 @@ ipcMain.handle('api:get-logs', () => {
   } catch { return ''; }
 });
 
+ipcMain.handle('api:get-server-logs', async () => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'server.log');
+    if (fs.existsSync(logPath)) {
+      return fs.readFileSync(logPath, 'utf8');
+    }
+    return 'No server logs available';
+  } catch {
+    return 'Failed to read server logs';
+  }
+});
+
 ipcMain.handle('server:status', async () => {
   return await serverManager.isRunning();
 });
@@ -152,7 +164,7 @@ function connectSSE() {
 
     if (res.statusCode !== 200) {
       res.resume();
-      scheduleReconnect(5000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
       return;
     }
 
@@ -160,7 +172,7 @@ function connectSSE() {
     let firstData = true;
 
     res.on('data', (chunk) => {
-      if (firstData) { log('[SSE] First data received'); firstData = false; }
+      if (firstData) { log('[SSE] First data received'); firstData = false; reconnectAttempts = 0; }
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -178,12 +190,12 @@ function connectSSE() {
     res.on('end', () => {
       log('[SSE] Connection ended');
       sseConnection = null;
-      scheduleReconnect(3000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     });
 
     res.on('error', () => {
       sseConnection = null;
-      scheduleReconnect(3000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     });
   });
 
@@ -191,7 +203,7 @@ function connectSSE() {
     if (!sseStopped) {
       log('[SSE] Error:', err.message);
       sseConnection = null;
-      scheduleReconnect(5000);
+      scheduleReconnect(Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000));
     }
   });
 
@@ -254,10 +266,17 @@ function handleSSEEvent(data) {
   }
 }
 
+let reconnectAttempts = 0;
+
 function scheduleReconnect(ms) {
   if (sseStopped) return;
   if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
-  sseReconnectTimer = setTimeout(() => { if (!sseStopped && sseSessionId) connectSSE(); }, ms);
+  sseReconnectTimer = setTimeout(() => {
+    if (!sseStopped && sseSessionId) {
+      log('[SSE] Attempting reconnect...');
+      connectSSE();
+    }
+  }, ms);
 }
 
 function stopSSE() {
