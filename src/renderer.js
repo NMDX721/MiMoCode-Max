@@ -584,6 +584,45 @@
     $('#btn-minimize').addEventListener('click', () => window.mimo.minimize());
     $('#btn-maximize').addEventListener('click', () => window.mimo.maximize());
     $('#btn-close').addEventListener('click', () => window.mimo.close());
+
+    // Settings panel
+    const settingsPanel = $('#settings-panel');
+    const btnSettings = $('#btn-settings');
+    const btnSave = $('#btn-save-settings');
+    const btnClose = $('#btn-close-settings');
+
+    btnSettings.addEventListener('click', async () => {
+      // Load current server URL
+      try {
+        const url = await window.mimo.getServerUrl();
+        $('#setting-server-url').value = url || 'http://127.0.0.1:4096';
+      } catch {}
+      // Load saved settings
+      $('#setting-app-title').value = localStorage.getItem('mimo-app-title') || 'MiMo Code - Max';
+      $('#setting-theme').value = localStorage.getItem('mimo-theme') || 'light';
+      settingsPanel.classList.remove('hidden');
+    });
+
+    btnSave.addEventListener('click', async () => {
+      const serverUrl = $('#setting-server-url').value.trim();
+      const appTitle = $('#setting-app-title').value.trim() || 'MiMo Code - Max';
+      const theme = $('#setting-theme').value;
+
+      if (serverUrl) {
+        await window.mimo.setServerUrl(serverUrl);
+      }
+      localStorage.setItem('mimo-app-title', appTitle);
+      localStorage.setItem('mimo-theme', theme);
+
+      applySettings();
+      settingsPanel.classList.add('hidden');
+      // Reload sessions with new server
+      await loadSessions();
+    });
+
+    btnClose.addEventListener('click', () => {
+      settingsPanel.classList.add('hidden');
+    });
   }
 
   function autoScroll() { const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100; if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight; }
