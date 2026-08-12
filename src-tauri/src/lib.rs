@@ -4,7 +4,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, Runtime,
+};
 use tauri::async_runtime::Mutex;
 
 struct PtySession {
@@ -45,7 +50,6 @@ async fn spawn_tui<R: Runtime>(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
-    // Use shell to run the command so PATH is resolved
     let mut cmd = CommandBuilder::new("cmd.exe");
     cmd.args(["/C", &file]);
     cmd.args(&args);
@@ -67,7 +71,6 @@ async fn spawn_tui<R: Runtime>(
 
     state.sessions.write().await.insert(handler, session.clone());
 
-    // Spawn reader task to forward PTY output to frontend
     let handle = app_handle.clone();
     let session_clone = session.clone();
     tauri::async_runtime::spawn(async move {
@@ -125,6 +128,48 @@ pub fn run() {
             write_tui,
             kill_tui,
         ])
+        .setup(|app| {
+            // Create system tray
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(Image::from_path("icons/tray-icon.png")?)
+                .menu(&menu)
+                .tooltip("MiMo Code - Max")
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
