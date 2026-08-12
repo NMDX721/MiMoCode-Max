@@ -1,0 +1,18 @@
+{
+  "name": "mimocode-max-tauri",
+  "version": "1.0.0",
+  "description": "MiMo Code Max - Tauri-based GUI for MiMo Code TUI",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasgasior/tauri-config-schema/tauri-v2/schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for MiMo Code Max",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "pty:default",
+    "pty:allow-spawn",
+    "pty:allow-write",
+    "pty:allow-kill"
+  ]
+}
