@@ -4,6 +4,8 @@ const fs = require('fs');
 const http = require('http');
 const ApiClient = require('./api');
 const Cache = require('./cache');
+const ServerManager = require('./server');
+const serverManager = new ServerManager();
 
 // ---------- Logging ----------
 const logFile = path.join(app.getPath('userData'), 'debug.log');
@@ -107,6 +109,14 @@ ipcMain.handle('api:get-logs', () => {
     fs.closeSync(fd);
     return buffer.toString('utf8');
   } catch { return ''; }
+});
+
+ipcMain.handle('server:status', async () => {
+  return await serverManager.isRunning();
+});
+ipcMain.handle('server:restart', async () => {
+  serverManager.stop();
+  return await serverManager.start();
 });
 
 // ---------- SSE: http.request on /event (V1 API) ----------
@@ -268,6 +278,14 @@ ipcMain.on('window:close', () => mainWindow && mainWindow.close());
 ipcMain.on('window:open-external', (_, url) => shell.openExternal(url));
 
 // ---------- App lifecycle ----------
-app.whenReady().then(() => { createWindow(); createTray(); });
-app.on('window-all-closed', () => { if (tray) tray.destroy(); app.quit(); });
+app.whenReady().then(async () => {
+  await serverManager.start();
+  createWindow();
+  createTray();
+});
+app.on('window-all-closed', () => {
+  serverManager.stop();
+  if (tray) tray.destroy();
+  app.quit();
+});
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

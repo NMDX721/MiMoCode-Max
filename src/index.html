@@ -39,6 +39,7 @@
         <span id="chat-title">选择一个会话</span>
         <select id="model-selector"></select>
         <span id="chat-status"></span>
+        <span id="connection-status" class="status-connected">已连接</span>
       </div>
       <div id="messages"></div>
       <div id="input-area">
@@ -77,6 +78,16 @@
             <div class="setting-group">
               <label>服务器地址</label>
               <input type="text" id="setting-server-url" placeholder="http://127.0.0.1:4096">
+            </div>
+            <div class="setting-group">
+              <label>服务器端口</label>
+              <input type="number" id="setting-server-port" value="4096" min="1024" max="65535">
+            </div>
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" id="setting-auto-start-server" checked>
+                自动启动服务器
+              </label>
             </div>
           </div>
 

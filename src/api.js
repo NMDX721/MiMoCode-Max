@@ -28,6 +28,10 @@ class ApiClient {
             reject(new Error('busy'));
             return;
           }
+          if (res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            return;
+          }
           try {
             resolve(JSON.parse(data));
           } catch {

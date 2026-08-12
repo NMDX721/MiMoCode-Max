@@ -29,6 +29,7 @@
     setupEventListeners();
     setupSSEListeners();
     applySettings();
+    checkConnection();
   }
 
   // Sessions
@@ -590,6 +591,7 @@
     if (messageQueue.length === 0 || isStreaming) return;
 
     const next = messageQueue.shift();
+    showNotification('正在发送消息...');
     updateQueueButton();
 
     // Create user message div
@@ -894,6 +896,14 @@
     }
     styleEl.textContent = customCss;
 
+    // Server settings
+    const serverPort = localStorage.getItem('mimo-server-port') || '4096';
+    const autoStartServer = localStorage.getItem('mimo-auto-start-server') !== 'false';
+    const serverPortEl = $('#setting-server-port');
+    const autoStartEl = $('#setting-auto-start-server');
+    if (serverPortEl) serverPortEl.value = serverPort;
+    if (autoStartEl) autoStartEl.checked = autoStartServer;
+
     // Version info from package.json
     const versionEl = document.getElementById('app-version');
     if (versionEl) versionEl.textContent = 'v1.0.0';
@@ -1158,6 +1168,8 @@
       localStorage.setItem('mimo-bg-image', bgImage);
       localStorage.setItem('mimo-logo-image', logoImage);
       localStorage.setItem('mimo-custom-css', customCss);
+      localStorage.setItem('mimo-server-port', $('#setting-server-port').value);
+      localStorage.setItem('mimo-auto-start-server', $('#setting-auto-start-server').checked.toString());
 
       applySettings();
       settingsPanel.classList.add('hidden');
@@ -1209,6 +1221,24 @@
       });
     }
   }
+
+  // Check connection status
+  async function checkConnection() {
+    const statusEl = $('#connection-status');
+    if (!statusEl) return;
+    try {
+      await window.mimo.getSessions();
+      statusEl.textContent = '已连接';
+      statusEl.className = 'status-connected';
+    } catch {
+      statusEl.textContent = '未连接';
+      statusEl.className = 'status-disconnected';
+    }
+  }
+
+  // Check connection periodically
+  setInterval(checkConnection, 30000);
+
   function autoResizeInput() { messageInput.style.height = 'auto'; messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px'; }
   function formatTime(ts) { const d = new Date(ts); return Date.now() - d < 86400000 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
