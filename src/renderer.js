@@ -567,10 +567,6 @@
   function stopGeneration() {
     if (!isStreaming) return;
 
-    // Show confirmation dialog
-    const confirmed = confirm('确定要停止当前生成吗？');
-    if (!confirmed) return;
-
     stopRequested = true;
     // Send abort command to API
     if (currentSessionId) {
@@ -578,7 +574,7 @@
     }
     isStreaming = false;
     btnSend.disabled = false;
-    stopSSE();
+    // 不调用 stopSSE() - 保留 SSE 连接以接收 idle 事件
     stopStreamingFetch();
     // Mark all streaming thinking elements as done
     messagesEl.querySelectorAll('.thinking.streaming').forEach(el => {
@@ -588,8 +584,6 @@
     });
     removeLoading();
     showNotification('已停止生成');
-    // Process queue after abort
-    setTimeout(() => processMessageQueue(), 1000);
   }
 
   // 统一的发送函数，供 sendMessage 和 processMessageQueue 使用
