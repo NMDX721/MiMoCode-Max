@@ -555,6 +555,9 @@
     $('#titlebar-title').textContent = title;
     document.title = title;
     document.body.className = theme === 'dark' ? 'theme-dark' : '';
+    // Version info from package.json
+    const versionEl = document.getElementById('app-version');
+    if (versionEl) versionEl.textContent = 'v1.0.0';
   }
 
   // Events
