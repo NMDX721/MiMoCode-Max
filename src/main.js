@@ -181,12 +181,28 @@ function handleSSEEvent(data) {
   if (!mainWindow || mainWindow.isDestroyed()) { log('[SSE] No window!'); return; }
 
   if (eventType === 'message.part.updated' || eventType === 'message.updated' || eventType === 'message.part.delta') {
+    // Handle delta events differently - they have delta/field, not part
+    let part = data.properties?.part;
+    let messageID = data.properties?.messageID || part?.messageID;
+
+    if (eventType === 'message.part.delta' && !part) {
+      // Delta events: { type, properties: { sessionID, messageID, partID, field, delta } }
+      part = {
+        id: data.properties?.partID,
+        type: data.properties?.field === 'text' ? 'text' : data.properties?.field,
+        text: data.properties?.delta,
+        messageID: data.properties?.messageID,
+        _isDelta: true,
+      };
+      messageID = data.properties?.messageID;
+    }
+
     mainWindow.webContents.send('sse:message-event', {
       type: eventType,
       sessionId: eventSessionId,
-      part: data.properties?.part,
+      part: part,
       info: data.properties?.info,
-      messageID: data.properties?.messageID || data.properties?.part?.messageID,
+      messageID: messageID,
     });
   }
 

@@ -1,4 +1,28 @@
+# Dependencies
 node_modules/
-out/
+
+# Build output
 dist/
+out/
+build/
+
+# Cache
+.cache/
+
+# Logs
 *.log
+
+# API responses (debug artifacts)
+api-response.json
+
+# Environment config
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -38,34 +38,52 @@ main                    ← 生产分支，始终可部署
 └── chore/xxx           ← 维护/配置
 ```
 
+### 分支命名规范
+
+格式：`type/scope-description`
+
+| 类型 | 命名示例 |
+|------|---------|
+| feat | `feat/sse-reconnect` |
+| fix | `fix/duplicate-messages` |
+| hotfix | `hotfix/crash-on-startup` |
+| chore | `chore/update-deps` |
+
+scope 可选，仅在改动涉及特定模块时添加：
+- `feat/api/add-timeout`
+- `fix/ui/scroll-position`
+
 ### 提交规范
 
-使用 [Conventional Commits](https://www.conventionalcommits.org/)：
+使用 [Conventional Commits](https://www.conventionalcommits.org/)，统一使用**英文小写**：
 
 ```
 <type>(<scope>): <subject>
 
 [body]
-
-[footer]
 ```
 
 | 类型 | 用途 | 示例 |
 |------|------|------|
-| `feat` | 新功能 | `feat(auth): 添加 OAuth 登录` |
-| `fix` | Bug 修复 | `fix(api): 修复超时重试逻辑` |
-| `docs` | 文档 | `docs: 更新 API 文档` |
-| `style` | 格式 | `style: 统一缩进为 2 空格` |
-| `refactor` | 重构 | `refactor: 提取公共组件` |
-| `test` | 测试 | `test: 添加单元测试` |
-| `chore` | 构建/配置 | `chore: 更新依赖` |
-| `perf` | 性能优化 | `perf: 优化渲染性能` |
+| feat | 新功能 | `feat: add SSE auto-reconnect` |
+| fix | Bug 修复 | `fix: prevent duplicate user messages` |
+| docs | 文档 | `docs: update README` |
+| style | 格式 | `style: fix indentation` |
+| refactor | 重构 | `refactor: extract API client` |
+| test | 测试 | `test: add unit tests for cache` |
+| chore | 构建/配置 | `chore: update electron to v41` |
+| perf | 性能优化 | `perf: optimize message rendering` |
+
+**提交规则**：
+- 第一行 ≤50 字符，使用祈使语气
+- body 说明 **为什么** 改，而不是 **改了什么**
+- 重要变更关联 Issue（`Closes #123`）
 
 ### Pull Request 流程
 
-1. **Fork 并创建分支**
+1. **创建分支**
    ```bash
-   git checkout -b feat/my-feature
+   git checkout -b feat/my-feature main
    ```
 
 2. **开发并提交**
@@ -83,11 +101,11 @@ main                    ← 生产分支，始终可部署
    - 标题遵循 Conventional Commits
    - 描述清楚改动内容和原因
    - 关联相关 Issue（`Closes #123`）
-   - 代码通过 lint 检查
+   - 使用 **Squash and Merge** 保持历史整洁
 
 ### 代码风格
 
-- 使用 2 空格缩进
+- 使用 4 空格缩进
 - 避免不必要的注释
 - 函数命名使用 PascalCase
 - 变量命名使用 camelCase
@@ -98,7 +116,7 @@ main                    ← 生产分支，始终可部署
 # 运行测试
 npm test
 
-# 运行 lint
+# 运行 lint（如已配置）
 npm run lint
 ```
 
