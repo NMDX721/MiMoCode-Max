@@ -2,6 +2,13 @@
 const { spawn, execSync } = require('child_process');
 const http = require('http');
 
+// 安全的日志函数，避免 EPIPE 错误
+function safeLog(...args) {
+  try {
+    console.log(...args);
+  } catch {}
+}
+
 class ServerManager {
   constructor(port = 4096) {
     this.port = port;
@@ -24,12 +31,10 @@ class ServerManager {
   // 检查 TUI 是否在运行
   isTuiRunning() {
     try {
-      // Windows: 查找 mimo 进程（排除 server 进程）
       const output = execSync('tasklist /FI "IMAGENAME eq mimo.exe" /NH', {
         encoding: 'utf8',
         windowsHide: true,
       });
-      // 检查是否有 mimo.exe 进程（TUI 模式）
       return output.includes('mimo.exe');
     } catch {
       return false;
@@ -43,10 +48,10 @@ class ServerManager {
         windowsHide: true,
         stdio: 'ignore',
       });
-      console.log('[Server] TUI process terminated');
+      safeLog('[Server] TUI process terminated');
       return true;
     } catch {
-      console.log('[Server] No TUI process found');
+      safeLog('[Server] No TUI process found');
       return false;
     }
   }
@@ -76,11 +81,11 @@ class ServerManager {
 
   // 启动 server（Max 专用）
   async start() {
-    console.log('[Server] Starting MiMo Code server for Max...');
+    safeLog('[Server] Starting MiMo Code server for Max...');
 
     // 步骤 1: 检查 TUI 是否在运行
     if (this.isTuiRunning()) {
-      console.log('[Server] TUI detected, terminating...');
+      safeLog('[Server] TUI detected, terminating...');
       this.killTui();
       // 等待端口释放
       await this.waitForPortFree(5000);
@@ -88,12 +93,12 @@ class ServerManager {
 
     // 步骤 2: 检查 server 是否已在运行
     if (await this.isRunning()) {
-      console.log('[Server] Server already running on port', this.port);
+      safeLog('[Server] Server already running on port', this.port);
       return true;
     }
 
     // 步骤 3: 启动新的 server
-    console.log('[Server] Starting server on port', this.port);
+    safeLog('[Server] Starting server on port', this.port);
 
     return new Promise((resolve) => {
       this.process = spawn('mimo', ['serve', '--port', String(this.port)], {
@@ -108,11 +113,11 @@ class ServerManager {
       const checkInterval = setInterval(async () => {
         if (await this.isRunning()) {
           clearInterval(checkInterval);
-          console.log('[Server] Server started successfully on port', this.port);
+          safeLog('[Server] Server started successfully on port', this.port);
           resolve(true);
         } else if (retries++ > 30) {
           clearInterval(checkInterval);
-          console.error('[Server] Failed to start after 30 retries');
+          safeLog('[Server] Failed to start after 30 retries');
           resolve(false);
         }
       }, 1000);
@@ -122,7 +127,7 @@ class ServerManager {
   // 停止 server
   stop() {
     if (this.process) {
-      console.log('[Server] Stopping server...');
+      safeLog('[Server] Stopping server...');
       this.process.kill();
       this.process = null;
     }
