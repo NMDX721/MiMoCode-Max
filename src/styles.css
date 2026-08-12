@@ -114,7 +114,23 @@ body.theme-dark {
   flex-shrink: 0;
 }
 
-#sidebar-header { padding: 12px; }
+#sidebar-header { padding: 12px; display: flex; gap: 4px; align-items: center; }
+#sidebar-header .refresh-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+#sidebar-header .refresh-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
 #btn-new-chat {
   width: 100%;

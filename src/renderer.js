@@ -1054,6 +1054,10 @@
       renderSessionList();
       messageInput.focus();
     });
+    $('#btn-refresh')?.addEventListener('click', async () => {
+      await loadSessions();
+      showNotification('会话列表已刷新');
+    });
     btnSend.addEventListener('click', sendMessage);
     btnStop.addEventListener('click', stopGeneration);
     $('#btn-cancel-queue').addEventListener('click', cancelQueue);
