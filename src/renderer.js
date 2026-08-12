@@ -4,6 +4,7 @@
   let currentAgent = 'compose';
   let config = {};
   let isStreaming = false;
+  let stopRequested = false;
   let renderedMsgIds = new Set();
   let messageCache = {};
   let fetchDebounce = null;
@@ -12,6 +13,7 @@
   let pendingImages = [];
   let streamingFetchTimer = null;
   const userMsgIds = new Set(); // Track client-sent message IDs to prevent SSE duplicates
+  const messageQueue = []; // Message queue for when API is busy
 
   const $ = (s) => document.querySelector(s);
   const sessionList = $('#session-list');
@@ -19,6 +21,7 @@
   const messagesEl = $('#messages');
   const messageInput = $('#message-input');
   const btnSend = $('#btn-send');
+  const btnStop = $('#btn-stop');
 
   async function init() {
     await loadSessions();
@@ -46,6 +49,11 @@
   }
 
   async function selectSession(id) {
+    // Clear queue when switching sessions
+    if (messageQueue.length > 0) {
+      messageQueue.length = 0;
+      updateQueueButton();
+    }
     pendingNewChat = false;
     currentSessionId = id;
     renderedMsgIds.clear();
@@ -56,6 +64,8 @@
     stopSSE();
     await loadMessages(id);
     startSSE(id);
+    // Show stop button when session is active
+    btnStop.classList.remove('hidden');
   }
 
   // Messages
@@ -97,14 +107,66 @@
     const container = document.createElement('div');
     container.className = `message ${role}`;
     if (msg.info?.id) container.dataset.msgId = msg.info.id;
+
+    // Collect reasoning texts to avoid duplication
+    const reasoningTexts = [];
+    let originalText = '';
     for (const part of msg.parts) {
-      switch (part.type) {
-        case 'text': if (part.text?.trim()) { const d = document.createElement('div'); d.className = 'msg-text'; d.innerHTML = fmt(part.text); container.appendChild(d); } break;
-        case 'reasoning': if (part.text?.trim()) container.appendChild(createThinking(part.text, false)); break;
-        case 'tool': container.appendChild(createTool(part)); break;
-        case 'file': { container.appendChild(createFilePart(part)); } break;
+      if (part.type === 'reasoning' && part.text?.trim()) {
+        reasoningTexts.push(part.text.trim());
+      }
+      if (part.type === 'text' && part.text?.trim()) {
+        originalText += part.text;
       }
     }
+
+    // Helper: normalize string for comparison (remove all whitespace, lowercase)
+    const normalize = (s) => s.replace(/\s+/g, '').toLowerCase();
+
+    for (const part of msg.parts) {
+      switch (part.type) {
+        case 'text':
+          if (part.text?.trim()) {
+            // Skip text if it's the same as reasoning content (prevents duplication)
+            const textContent = part.text.trim();
+            const normalizedText = normalize(textContent);
+            const isDuplicate = reasoningTexts.some(rt => {
+              const normalizedReasoning = normalize(rt);
+              return normalizedReasoning === normalizedText ||
+                     normalizedReasoning.includes(normalizedText) ||
+                     normalizedText.includes(normalizedReasoning);
+            });
+            if (!isDuplicate) {
+              const d = document.createElement('div');
+              d.className = 'msg-text';
+              d.innerHTML = fmt(part.text);
+              container.appendChild(d);
+            }
+          }
+          break;
+        case 'reasoning':
+          if (part.text?.trim()) container.appendChild(createThinking(part.text, false));
+          break;
+        case 'tool':
+          container.appendChild(createTool(part));
+          break;
+        case 'file':
+          container.appendChild(createFilePart(part));
+          break;
+      }
+    }
+
+    // Add copy button for assistant messages
+    if (role === 'assistant' && originalText.trim()) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'msg-copy-btn';
+      copyBtn.innerHTML = '&#x1F4CB;';
+      copyBtn.title = 'Copy message';
+      copyBtn.dataset.originalText = originalText;
+      copyBtn.addEventListener('click', handleCopyMessage);
+      container.appendChild(copyBtn);
+    }
+
     if (container.children.length) messagesEl.appendChild(container);
   }
 
@@ -121,6 +183,21 @@
     const s = document.createElement('summary');
     s.textContent = streaming ? 'Thinking...' : 'Thought';
     const c = document.createElement('div'); c.className = 'thinking-content'; c.innerHTML = fmt(text || '');
+
+    // Add copy button for thinking content
+    if (!streaming && text?.trim()) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'thinking-copy-btn';
+      copyBtn.innerHTML = '&#x1F4CB;';
+      copyBtn.title = 'Copy thinking';
+      copyBtn.dataset.originalText = text;
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCopyMessage({ currentTarget: copyBtn });
+      });
+      c.appendChild(copyBtn);
+    }
+
     d.appendChild(s); d.appendChild(c);
     d.addEventListener('toggle', () => {
       s.textContent = d.classList.contains('streaming') ? 'Thinking...' : 'Thought';
@@ -139,17 +216,7 @@
       img.style.borderRadius = '8px';
       img.style.cursor = 'pointer';
       img.title = part.filename || 'image';
-      img.addEventListener('click', () => {
-        const w = window.open('', '_blank', 'width=800,height=600');
-        if (!w) return;
-        const style = w.document.createElement('style');
-        style.textContent = 'body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1a1a1a;}img{max-width:95vw;max-height:95vh;object-fit:contain;}';
-        w.document.head.appendChild(style);
-        w.document.title = part.filename || 'image';
-        const imgEl = w.document.createElement('img');
-        imgEl.src = part.url;
-        w.document.body.appendChild(imgEl);
-      });
+      img.addEventListener('click', () => openImageZoom(part.url, part.filename));
       d.appendChild(img);
       if (part.filename) {
         const name = document.createElement('div');
@@ -187,7 +254,6 @@
   function setupSSEListeners() {
     window.mimo.onSSEMessageEvent(async (event) => {
       if (!currentSessionId || event.sessionId !== currentSessionId) return;
-      const syncStatus = document.getElementById('sync-status');
 
       // Render directly from SSE event data
       const part = event.part;
@@ -199,7 +265,11 @@
       if (part && messageID) {
         renderPartFromEvent(messageID, info, part);
         autoScroll();
-        if (syncStatus) syncStatus.textContent = '实时同步';
+        // Show stop button when receiving events (something is being processed)
+        if (!isStreaming) {
+          isStreaming = true;
+          btnSend.disabled = true;
+        }
       }
     });
 
@@ -251,8 +321,29 @@
           const container = document.createElement('div');
           container.className = `message ${role}`;
           container.dataset.msgId = id;
+
+          // Collect reasoning texts to avoid duplication
+          const reasoningTexts = [];
           for (const part of m.parts || []) {
-            if (part.type === 'text' && part.text?.trim()) { const d = document.createElement('div'); d.className = 'msg-text'; d.innerHTML = fmt(part.text); container.appendChild(d); }
+            if (part.type === 'reasoning' && part.text?.trim()) {
+              reasoningTexts.push(part.text.trim());
+            }
+          }
+
+          for (const part of m.parts || []) {
+            if (part.type === 'text' && part.text?.trim()) {
+              // Skip text if it's the same as reasoning content (prevents duplication)
+              const textContent = part.text.trim();
+              const isDuplicate = reasoningTexts.some(rt =>
+                rt === textContent || rt.includes(textContent) || textContent.includes(rt)
+              );
+              if (!isDuplicate) {
+                const d = document.createElement('div');
+                d.className = 'msg-text';
+                d.innerHTML = fmt(part.text);
+                container.appendChild(d);
+              }
+            }
             else if (part.type === 'reasoning' && part.text?.trim()) {
               // Skip reasoning if thinking block already exists in this container
               if (!container.querySelector('.thinking')) {
@@ -266,13 +357,16 @@
         }
         autoScroll();
       } catch {}
-      const syncStatus = document.getElementById('sync-status');
-      if (syncStatus) syncStatus.textContent = '回复完成';
+      // Process queued messages after session becomes idle
+      processMessageQueue();
     });
   }
 
   // Render a single part from SSE event directly into DOM
   function renderPartFromEvent(messageID, info, part) {
+    // Skip if stop was requested
+    if (stopRequested) return;
+
     // Skip if this is a client-sent user message
     if (userMsgIds.has(messageID)) return;
 
@@ -379,7 +473,14 @@
       // Update thinking content if text arrived
       if (part.text) {
         const content = el.querySelector('.thinking-content');
-        if (content) content.innerHTML = fmt(part.text);
+        if (content) {
+          if (part._isDelta && content.textContent) {
+            // Append delta to existing thinking content
+            content.innerHTML = fmt(content.textContent + part.text);
+          } else {
+            content.innerHTML = fmt(part.text);
+          }
+        }
       }
       // Keep summary as "Thinking..." while streaming
       const summary = el.querySelector('summary');
@@ -413,7 +514,7 @@
   function startSSE(id) { if (id) window.mimo.startSSE(id); }
   function stopSSE() { window.mimo.stopSSE(); stopStreamingFetch(); }
 
-  // Periodic fetch during streaming — updates existing messages (断点续传)
+  // Periodic fetch during streaming — backup sync (reduced frequency)
   function startStreamingFetch() {
     stopStreamingFetch();
     const mySessionId = currentSessionId;
@@ -423,13 +524,12 @@
         const msgs = await window.mimo.getMessages(mySessionId);
         const list = Array.isArray(msgs) ? msgs : [];
         messageCache[mySessionId] = list;
-        // Update existing message elements, don't re-render all
+        // Only update existing message elements, don't re-render all
         for (const m of list) {
           const id = m.info?.id || '';
           const role = m.info?.role || 'assistant';
-          // Skip user messages — already rendered client-side
+          // Skip user messages
           if (role === 'user' || userMsgIds.has(id)) {
-            // But adopt pending userDiv if it lacks data-msg-id
             if (id) {
               const pending = messagesEl.querySelector('.message.user:not([data-msg-id])');
               if (pending) { pending.dataset.msgId = id; renderedMsgIds.add(id); }
@@ -445,41 +545,145 @@
             const existing = container.querySelector(`[data-part-key="${partKey}"]`);
             if (existing) {
               updatePartElement(existing, part);
-            } else if (part.type === 'text' && part.text?.trim()) {
-              // New text part arrived — append
-              const div = document.createElement('div');
-              div.className = 'msg-text';
-              div.dataset.partKey = partKey;
-              div.innerHTML = fmt(part.text);
-              container.appendChild(div);
-            } else if (part.type === 'reasoning') {
-              if (existing) {
-                // Update existing thinking — fill in content if arrived
-                if (part.text?.trim()) updatePartElement(existing, part);
-              } else {
-                // No existing thinking block — create one (even if empty, to show progress)
-                const thinking = createThinking(part.text || '', true);
-                thinking.dataset.partKey = partKey;
-                container.appendChild(thinking);
-              }
             }
           }
         }
         autoScroll();
       } catch {}
-    }, 3000);
+    }, 5000); // Reduced to 5 seconds as backup only
   }
 
   function stopStreamingFetch() {
     if (streamingFetchTimer) { clearInterval(streamingFetchTimer); streamingFetchTimer = null; }
   }
 
+  function stopGeneration() {
+    if (!isStreaming) return;
+
+    // Show confirmation dialog
+    const confirmed = confirm('确定要停止当前生成吗？');
+    if (!confirmed) return;
+
+    stopRequested = true;
+    // Send abort command to API
+    if (currentSessionId) {
+      window.mimo.abortMessage(currentSessionId).catch(() => {});
+    }
+    isStreaming = false;
+    btnSend.disabled = false;
+    stopSSE();
+    stopStreamingFetch();
+    // Mark all streaming thinking elements as done
+    messagesEl.querySelectorAll('.thinking.streaming').forEach(el => {
+      el.classList.remove('streaming');
+      const summary = el.querySelector('summary');
+      if (summary && summary.textContent === 'Thinking...') summary.textContent = 'Thought';
+    });
+    removeLoading();
+    showNotification('已停止生成');
+    // Process queue after abort
+    setTimeout(() => processMessageQueue(), 1000);
+  }
+
+  // Process message queue - send directly to API
+  async function processMessageQueue() {
+    if (messageQueue.length === 0 || isStreaming) return;
+
+    const next = messageQueue.shift();
+    updateQueueButton();
+
+    // Create user message div
+    const userDiv = document.createElement('div');
+    userDiv.className = 'message user';
+    const tempId = 'pending-' + Date.now();
+    userDiv.dataset.msgId = tempId;
+    userMsgIds.add(tempId);
+    const textDiv = document.createElement('div');
+    textDiv.innerHTML = fmt(next.content);
+    userDiv.appendChild(textDiv);
+    if (next.images) {
+      for (const img of next.images) {
+        const imgEl = document.createElement('img');
+        imgEl.src = img.data;
+        imgEl.style.maxWidth = '300px';
+        imgEl.style.borderRadius = '8px';
+        imgEl.style.marginTop = '8px';
+        imgEl.addEventListener('click', () => openImageZoom(img.data, img.name));
+        userDiv.appendChild(imgEl);
+      }
+    }
+
+    messagesEl.appendChild(userDiv);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    isStreaming = true;
+    stopRequested = false;
+    delete messageCache[currentSessionId];
+    startStreamingFetch();
+
+    try {
+      await window.mimo.sendMessage(currentSessionId, next.content, currentAgent, (next.images || []).map(i => ({ data: i.data, mime: i.mime })));
+      // Fetch real message ID
+      try {
+        const msgs = await window.mimo.getMessages(currentSessionId);
+        const list = Array.isArray(msgs) ? msgs : [];
+        const userMsgs = list.filter(m => m.info?.role === 'user');
+        const pendingDivs = messagesEl.querySelectorAll('.message.user[data-msg-id^="pending-"]');
+        const idx = Array.from(pendingDivs).indexOf(userDiv);
+        const match = idx >= 0 ? userMsgs[idx] : userMsgs[userMsgs.length - 1];
+        if (match?.info?.id) {
+          userMsgIds.delete(tempId);
+          userMsgIds.add(match.info.id);
+          userDiv.dataset.msgId = match.info.id;
+        }
+      } catch {}
+    }
+    catch (err) {
+      removeLoading();
+      if (err.message === 'busy') {
+        userDiv.remove();
+        userMsgIds.delete(tempId);
+        messageQueue.unshift(next);
+        showNotification(`API 忙碌，消息已排队 (队列: ${messageQueue.length})`);
+        updateQueueButton();
+      } else {
+        const e = document.createElement('div');
+        e.className = 'message assistant';
+        e.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`;
+        messagesEl.appendChild(e);
+      }
+    }
+    finally {
+      isStreaming = false;
+      // Continue processing queue
+      if (messageQueue.length > 0) {
+        setTimeout(() => processMessageQueue(), 500);
+      }
+    }
+  }
+
+  // Cancel queued messages
+  function cancelQueue() {
+    const count = messageQueue.length;
+    messageQueue.length = 0;
+    updateQueueButton();
+    if (count > 0) {
+      showNotification(`已取消 ${count} 条排队消息`);
+    }
+  }
+
   // Send
   async function sendMessage() {
     const content = messageInput.value.trim();
     if (!content && !pendingImages.length) return;
-    if (isStreaming) return;
     if (!content) return;
+
+    // Handle slash commands
+    if (content.startsWith('/')) {
+      messageInput.value = '';
+      executeSlashCommand(content);
+      return;
+    }
 
     // Delayed creation: create session on first send
     if (pendingNewChat) {
@@ -534,11 +738,19 @@
       });
       userDiv.appendChild(imgEl);
     }
+    // If already streaming, add to queue (don't show message yet)
+    if (isStreaming) {
+      messageQueue.push({ content, images });
+      showNotification(`消息已排队 (队列: ${messageQueue.length})`);
+      updateQueueButton();
+      return;
+    }
+
     messagesEl.appendChild(userDiv);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
     isStreaming = true;
-    btnSend.disabled = true;
+    stopRequested = false;
     delete messageCache[currentSessionId];
     startStreamingFetch();
     try {
@@ -558,8 +770,39 @@
         }
       } catch {}
     }
-    catch (err) { removeLoading(); const e = document.createElement('div'); e.className = 'message assistant'; e.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`; messagesEl.appendChild(e); }
-    finally { isStreaming = false; btnSend.disabled = false; }
+    catch (err) {
+      removeLoading();
+      // If busy, remove user message and add to queue
+      if (err.message === 'busy') {
+        userDiv.remove();
+        userMsgIds.delete(tempId);
+        messageQueue.unshift({ content, images });
+        showNotification(`API 忙碌，消息已排队 (队列: ${messageQueue.length})`);
+        updateQueueButton();
+      } else {
+        const e = document.createElement('div');
+        e.className = 'message assistant';
+        e.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`;
+        messagesEl.appendChild(e);
+      }
+    }
+    finally {
+      isStreaming = false;
+      // Process queue if there are pending messages
+      processMessageQueue();
+    }
+  }
+
+  // Update queue button visibility
+  function updateQueueButton() {
+    const queueInfo = $('#queue-info');
+    const queueCount = $('#queue-count');
+    if (messageQueue.length > 0) {
+      queueInfo.classList.remove('hidden');
+      queueCount.textContent = messageQueue.length;
+    } else {
+      queueInfo.classList.add('hidden');
+    }
   }
 
   function removeLoading() { if (loadingEl?.parentNode) loadingEl.parentNode.removeChild(loadingEl); loadingEl = null; }
@@ -571,6 +814,45 @@
       if (config.model) {
         const name = config.model.replace('xiaomi/', '').replace('mimo-', 'MiMo ').replace('-pro', '').toUpperCase().replace('V2.5', '2.5');
         $('#chat-status').textContent = `Model: ${name}`;
+        // Set model selector value
+        const selector = $('#model-selector');
+        if (selector && selector.options.length > 0) {
+          // Find matching option
+          for (let i = 0; i < selector.options.length; i++) {
+            if (selector.options[i].value === config.model) {
+              selector.selectedIndex = i;
+              break;
+            }
+          }
+        }
+      }
+      // Populate model selector from config if available, or use defaults
+      const selector = $('#model-selector');
+      if (selector) {
+        selector.innerHTML = '';
+        const models = config.models && Array.isArray(config.models) ? config.models : [
+          { id: 'xiaomi/mimo-v2-pro', name: 'MiMo V2 Pro' },
+          { id: 'xiaomi/mimo-v2-flash', name: 'MiMo V2 Flash' },
+          { id: 'xiaomi/mimo-v2-lite', name: 'MiMo V2 Lite' },
+        ];
+        models.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model.id || model;
+          option.textContent = model.name || model.id || model;
+          selector.appendChild(option);
+        });
+        // Select current model
+        if (config.model) {
+          selector.value = config.model;
+          // If current model not in list, add it
+          if (selector.value !== config.model) {
+            const option = document.createElement('option');
+            option.value = config.model;
+            option.textContent = config.model;
+            selector.appendChild(option);
+            selector.value = config.model;
+          }
+        }
       }
     } catch {}
   }
@@ -579,12 +861,133 @@
   function applySettings() {
     const title = localStorage.getItem('mimo-app-title') || 'MiMo Code - Max';
     const theme = localStorage.getItem('mimo-theme') || 'light';
+    const fontSize = localStorage.getItem('mimo-font-size') || '14';
+    const msgWidth = localStorage.getItem('mimo-msg-width') || '80';
+    const bgImage = localStorage.getItem('mimo-bg-image') || '';
+    const customCss = localStorage.getItem('mimo-custom-css') || '';
+
     $('#titlebar-title').textContent = title;
     document.title = title;
     document.body.className = theme === 'dark' ? 'theme-dark' : '';
+
+    // Apply font size
+    document.documentElement.style.setProperty('--msg-font-size', fontSize + 'px');
+
+    // Apply message width
+    document.documentElement.style.setProperty('--msg-max-width', msgWidth + '%');
+
+    // Apply background image
+    if (bgImage) {
+      document.body.style.backgroundImage = `url(${bgImage})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+    } else {
+      document.body.style.backgroundImage = '';
+    }
+
+    // Apply custom CSS
+    let styleEl = document.getElementById('custom-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'custom-style';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = customCss;
+
     // Version info from package.json
     const versionEl = document.getElementById('app-version');
     if (versionEl) versionEl.textContent = 'v1.0.0';
+  }
+
+  // Slash commands
+  const slashCommands = [
+    { name: '/help', description: '显示帮助' },
+    { name: '/clear', description: '清空当前对话' },
+    { name: '/model', description: '切换模型' },
+    { name: '/agent', description: '切换代理模式' },
+    { name: '/compact', description: '压缩对话' },
+    { name: '/export', description: '导出对话' },
+    { name: '/debug', description: '切换调试模式' },
+    { name: '/parallel', description: '并行执行任务' },
+    { name: '/tdd', description: '测试驱动开发' },
+    { name: '/review', description: '代码审查' },
+    { name: '/merge', description: '合并工作' },
+  ];
+
+  let commandPickerVisible = false;
+  let commandPicker = null;
+
+  function handleSlashCommand(input) {
+    if (!commandPicker) {
+      commandPicker = document.createElement('div');
+      commandPicker.id = 'command-picker';
+      commandPicker.className = 'command-picker hidden';
+      document.getElementById('input-area').appendChild(commandPicker);
+    }
+
+    if (input.startsWith('/') && input.length > 0) {
+      const query = input.toLowerCase();
+      const filtered = slashCommands.filter(cmd =>
+        cmd.name.toLowerCase().startsWith(query)
+      );
+
+      if (filtered.length > 0) {
+        commandPicker.innerHTML = filtered.map(cmd =>
+          `<div class="command-item" data-command="${cmd.name}">
+            <span class="command-name">${cmd.name}</span>
+            <span class="command-desc">${cmd.description}</span>
+          </div>`
+        ).join('');
+        commandPicker.classList.remove('hidden');
+        commandPickerVisible = true;
+
+        // Add click handlers
+        commandPicker.querySelectorAll('.command-item').forEach(item => {
+          item.addEventListener('click', () => {
+            messageInput.value = item.dataset.command + ' ';
+            commandPicker.classList.add('hidden');
+            commandPickerVisible = false;
+            messageInput.focus();
+          });
+        });
+        return;
+      }
+    }
+
+    commandPicker.classList.add('hidden');
+    commandPickerVisible = false;
+  }
+
+  function executeSlashCommand(command) {
+    const cmd = command.trim().toLowerCase();
+
+    switch (cmd) {
+      case '/help':
+        showNotification('Commands: /help, /clear, /model, /agent, /compact, /export, /debug');
+        break;
+      case '/clear':
+        messagesEl.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4AC;</div><div class="text">开始新对话</div></div>';
+        renderedMsgIds.clear();
+        break;
+      case '/debug':
+        const syncStatus = document.getElementById('sync-status');
+        if (syncStatus) syncStatus.style.display = syncStatus.style.display === 'none' ? '' : 'none';
+        break;
+      default:
+        showNotification(`Unknown command: ${cmd}`);
+    }
+  }
+
+  function showNotification(message) {
+    const existing = document.querySelector('.notification');
+    if (existing) existing.remove();
+
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => notification.remove(), 3000);
   }
 
   // Events
@@ -600,20 +1003,120 @@
       messageInput.focus();
     });
     btnSend.addEventListener('click', sendMessage);
+    btnStop.addEventListener('click', stopGeneration);
+    $('#btn-cancel-queue').addEventListener('click', cancelQueue);
     messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-    messageInput.addEventListener('input', () => { messageInput.style.height = 'auto'; messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px'; });
+    messageInput.addEventListener('input', () => {
+      messageInput.style.height = 'auto';
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px';
+      handleSlashCommand(messageInput.value);
+    });
     messageInput.addEventListener('paste', handlePaste);
     document.addEventListener('drop', (e) => { e.preventDefault(); handleImageFiles(e.dataTransfer.files); });
     document.addEventListener('dragover', (e) => e.preventDefault());
+
+    // Ctrl+A to select within a single block (thinking, code, etc.)
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'a') {
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+
+        // Check if we're inside a thinking block, code block, tool detail, or message text
+        const block = container.nodeType === 3 ? container.parentElement : container;
+        const thinkingBlock = block.closest('.thinking-content');
+        const codeBlock = block.closest('pre code') || block.closest('pre');
+        const toolDetail = block.closest('.tool-detail');
+        const msgText = block.closest('.msg-text');
+
+        // Only handle if we're inside a specific block, not the whole document
+        if (thinkingBlock || codeBlock || toolDetail || msgText) {
+          e.preventDefault();
+          e.stopPropagation();
+          const target = thinkingBlock || codeBlock || toolDetail || msgText;
+          const newRange = document.createRange();
+          newRange.selectNodeContents(target);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+          return false;
+        }
+      }
+    });
+
     $('#btn-minimize').addEventListener('click', () => window.mimo.minimize());
     $('#btn-maximize').addEventListener('click', () => window.mimo.maximize());
     $('#btn-close').addEventListener('click', () => window.mimo.close());
+
+    // Title editing (double-click to edit)
+    chatTitle.addEventListener('dblclick', () => {
+      if (!currentSessionId) return;
+      const currentTitle = chatTitle.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = currentTitle;
+      input.className = 'title-edit-input';
+      chatTitle.replaceWith(input);
+      input.focus();
+      input.select();
+
+      const saveTitle = async () => {
+        const newTitle = input.value.trim() || currentTitle;
+        chatTitle.textContent = newTitle;
+        input.replaceWith(chatTitle);
+        if (newTitle !== currentTitle) {
+          try {
+            await window.mimo.updateSession(currentSessionId, { title: newTitle });
+            // Update session in local list
+            const session = sessions.find(s => s.id === currentSessionId);
+            if (session) session.title = newTitle;
+            renderSessionList();
+          } catch {}
+        }
+      };
+
+      input.addEventListener('blur', saveTitle);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') saveTitle();
+        else if (e.key === 'Escape') { chatTitle.textContent = currentTitle; input.replaceWith(chatTitle); }
+      });
+    });
+
+    // Model selector
+    const modelSelector = $('#model-selector');
+    if (modelSelector) {
+      modelSelector.addEventListener('change', async () => {
+        const model = modelSelector.value;
+        try {
+          // Update config with new model
+          await window.mimo.updateSession(currentSessionId, { model });
+          // Update status display
+          const name = model.replace('mimo-', 'MiMo ').replace('-pro', '').replace('-flash', '').replace('-lite', '').toUpperCase().replace('V2.5', '2.5');
+          $('#chat-status').textContent = `Model: ${name}`;
+        } catch {}
+      });
+    }
 
     // Settings panel
     const settingsPanel = $('#settings-panel');
     const btnSettings = $('#btn-settings');
     const btnSave = $('#btn-save-settings');
     const btnClose = $('#btn-close-settings');
+
+    // Settings tab navigation
+    document.querySelectorAll('.settings-nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        // Remove active from all nav items and tabs
+        document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        // Add active to clicked nav item and corresponding tab
+        item.classList.add('active');
+        const tabId = 'tab-' + item.dataset.tab;
+        const tab = document.getElementById(tabId);
+        if (tab) tab.classList.add('active');
+      });
+    });
 
     btnSettings.addEventListener('click', async () => {
       // Load current server URL
@@ -624,6 +1127,12 @@
       // Load saved settings
       $('#setting-app-title').value = localStorage.getItem('mimo-app-title') || 'MiMo Code - Max';
       $('#setting-theme').value = localStorage.getItem('mimo-theme') || 'light';
+      $('#setting-font-size').value = localStorage.getItem('mimo-font-size') || '14';
+      $('#setting-msg-width').value = localStorage.getItem('mimo-msg-width') || '80';
+      $('#setting-show-timestamps').checked = localStorage.getItem('mimo-show-timestamps') !== 'false';
+      $('#setting-bg-image').value = localStorage.getItem('mimo-bg-image') || '';
+      $('#setting-logo-image').value = localStorage.getItem('mimo-logo-image') || '';
+      $('#setting-custom-css').value = localStorage.getItem('mimo-custom-css') || '';
       settingsPanel.classList.remove('hidden');
     });
 
@@ -631,12 +1140,24 @@
       const serverUrl = $('#setting-server-url').value.trim();
       const appTitle = $('#setting-app-title').value.trim() || 'MiMo Code - Max';
       const theme = $('#setting-theme').value;
+      const fontSize = $('#setting-font-size').value;
+      const msgWidth = $('#setting-msg-width').value;
+      const showTimestamps = $('#setting-show-timestamps').checked;
+      const bgImage = $('#setting-bg-image').value.trim();
+      const logoImage = $('#setting-logo-image').value.trim();
+      const customCss = $('#setting-custom-css').value;
 
       if (serverUrl) {
         await window.mimo.setServerUrl(serverUrl);
       }
       localStorage.setItem('mimo-app-title', appTitle);
       localStorage.setItem('mimo-theme', theme);
+      localStorage.setItem('mimo-font-size', fontSize);
+      localStorage.setItem('mimo-msg-width', msgWidth);
+      localStorage.setItem('mimo-show-timestamps', showTimestamps.toString());
+      localStorage.setItem('mimo-bg-image', bgImage);
+      localStorage.setItem('mimo-logo-image', logoImage);
+      localStorage.setItem('mimo-custom-css', customCss);
 
       applySettings();
       settingsPanel.classList.add('hidden');
@@ -647,12 +1168,45 @@
     btnClose.addEventListener('click', () => {
       settingsPanel.classList.add('hidden');
     });
+
+    // Log viewer
+    const btnViewLogs = $('#btn-view-logs');
+    const logViewer = $('#log-viewer');
+    const logContent = $('#log-content');
+
+    if (btnViewLogs) {
+      btnViewLogs.addEventListener('click', async () => {
+        if (logViewer.classList.contains('hidden')) {
+          // Show loading state
+          btnViewLogs.textContent = '加载中...';
+          btnViewLogs.disabled = true;
+          logContent.value = '加载日志中...';
+          logViewer.classList.remove('hidden');
+
+          // Load logs asynchronously
+          try {
+            const logs = await window.mimo.getLogs();
+            logContent.value = logs || 'No logs available';
+          } catch {
+            logContent.value = 'Failed to load logs';
+          }
+          btnViewLogs.textContent = '隐藏日志';
+          btnViewLogs.disabled = false;
+        } else {
+          logViewer.classList.add('hidden');
+          btnViewLogs.textContent = '查看日志';
+        }
+      });
+    }
   }
 
   function autoScroll() {
     // Always scroll during streaming, otherwise only if near bottom
     if (isStreaming || messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100) {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      messagesEl.scrollTo({
+        top: messagesEl.scrollHeight,
+        behavior: isStreaming ? 'smooth' : 'auto'
+      });
     }
   }
   function autoResizeInput() { messageInput.style.height = 'auto'; messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px'; }
@@ -677,6 +1231,44 @@
     h = h.replace(/^# (.+)$/gm, '<h2>$1</h2>');
     h = h.replace(/\n/g, '<br>');
     return h;
+  }
+
+  // Copy message functionality
+  function handleCopyMessage(e) {
+    const btn = e.currentTarget;
+    const originalText = btn.dataset.originalText;
+    if (!originalText) return;
+
+    // Copy plain text to clipboard
+    navigator.clipboard.writeText(originalText).then(() => {
+      // Show feedback
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '&#x2714;';
+      btn.style.color = 'var(--success)';
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.style.color = '';
+      }, 1500);
+    }).catch(() => {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = originalText;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '&#x2714;';
+        btn.style.color = 'var(--success)';
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          btn.style.color = '';
+        }, 1500);
+      } catch {}
+      document.body.removeChild(textarea);
+    });
   }
 
   // Image paste / drag-drop
@@ -723,10 +1315,12 @@
       wrapper.className = 'image-preview-item';
       const imgEl = document.createElement('img');
       imgEl.src = img.data;
+      imgEl.style.cursor = 'pointer';
+      imgEl.addEventListener('click', () => openImageZoom(img.data, img.name));
       const removeBtn = document.createElement('button');
       removeBtn.className = 'image-preview-remove';
       removeBtn.innerHTML = '&times;';
-      removeBtn.onclick = () => { pendingImages.splice(i, 1); renderImagePreviews(); };
+      removeBtn.onclick = (e) => { e.stopPropagation(); pendingImages.splice(i, 1); renderImagePreviews(); };
       wrapper.appendChild(imgEl);
       wrapper.appendChild(removeBtn);
       previewArea.appendChild(wrapper);
@@ -737,6 +1331,97 @@
     pendingImages = [];
     const previewArea = document.getElementById('image-preview-area');
     if (previewArea) { previewArea.innerHTML = ''; previewArea.style.display = 'none'; }
+  }
+
+  // Image zoom modal with scroll scaling
+  function openImageZoom(src, name) {
+    const modal = document.createElement('div');
+    modal.className = 'image-zoom-modal';
+    modal.innerHTML = `
+      <div class="image-zoom-overlay"></div>
+      <div class="image-zoom-content">
+        <button class="image-zoom-close">&times;</button>
+        <div class="image-zoom-container">
+          <img src="${src}" alt="${name || 'image'}" class="image-zoom-img">
+        </div>
+        <div class="image-zoom-controls">
+          <button class="image-zoom-btn" data-action="zoom-in">+</button>
+          <button class="image-zoom-btn" data-action="zoom-out">-</button>
+          <button class="image-zoom-btn" data-action="zoom-reset">1:1</button>
+          <span class="image-zoom-level">100%</span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const img = modal.querySelector('.image-zoom-img');
+    const level = modal.querySelector('.image-zoom-level');
+    let scale = 1;
+    let isDragging = false;
+    let startX, startY, translateX = 0, translateY = 0;
+
+    function updateTransform() {
+      img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      level.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Auto-scale image to fit viewport
+    img.onload = () => {
+      const viewportWidth = window.innerWidth * 0.8;
+      const viewportHeight = window.innerHeight * 0.8;
+      const imgWidth = img.naturalWidth;
+      const imgHeight = img.naturalHeight;
+      const scaleWidth = viewportWidth / imgWidth;
+      const scaleHeight = viewportHeight / imgHeight;
+      scale = Math.min(scaleWidth, scaleHeight, 1); // Don't scale up beyond 100%
+      updateTransform();
+    };
+
+    // Zoom with scroll
+    modal.querySelector('.image-zoom-container').addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      scale = Math.max(0.1, Math.min(10, scale + delta));
+      updateTransform();
+    });
+
+    // Zoom buttons
+    modal.querySelectorAll('.image-zoom-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'zoom-in') scale = Math.min(10, scale + 0.25);
+        else if (action === 'zoom-out') scale = Math.max(0.1, scale - 0.25);
+        else if (action === 'zoom-reset') { scale = 1; translateX = 0; translateY = 0; }
+        updateTransform();
+      });
+    });
+
+    // Drag to pan
+    img.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX - translateX;
+      startY = e.clientY - translateY;
+      img.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      translateX = e.clientX - startX;
+      translateY = e.clientY - startY;
+      updateTransform();
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      img.style.cursor = 'grab';
+    });
+
+    // Close
+    modal.querySelector('.image-zoom-overlay').addEventListener('click', () => modal.remove());
+    modal.querySelector('.image-zoom-close').addEventListener('click', () => modal.remove());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') modal.remove();
+    });
   }
 
   init();

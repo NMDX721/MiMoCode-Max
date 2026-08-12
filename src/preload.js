@@ -5,16 +5,21 @@ contextBridge.exposeInMainWorld('mimo', {
   getSessions: () => ipcRenderer.invoke('api:get-sessions'),
   getSession: (id) => ipcRenderer.invoke('api:get-session', id),
   createSession: (data) => ipcRenderer.invoke('api:create-session', data),
+  updateSession: (id, data) => ipcRenderer.invoke('api:update-session', { id, data }),
   deleteSession: (id) => ipcRenderer.invoke('api:delete-session', id),
 
   // Messages
   getMessages: (sessionId) => ipcRenderer.invoke('api:get-messages', sessionId),
   sendMessage: (sessionId, content, agent, images) => ipcRenderer.invoke('api:send-message', { sessionId, content, agent, images }),
+  abortMessage: (sessionId) => ipcRenderer.invoke('api:abort-message', sessionId),
 
   // Config
   getConfig: () => ipcRenderer.invoke('api:get-config'),
   setServerUrl: (url) => ipcRenderer.invoke('api:set-server-url', url),
   getServerUrl: () => ipcRenderer.invoke('api:get-server-url'),
+
+  // Logs
+  getLogs: () => ipcRenderer.invoke('api:get-logs'),
 
   // SSE events (from main process)
   startSSE: (sessionId) => ipcRenderer.invoke('sse:start', sessionId),

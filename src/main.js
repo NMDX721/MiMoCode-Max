@@ -79,21 +79,42 @@ ipcMain.handle('api:get-config', async () => {
   catch { return cache.getConfig(); }
 });
 ipcMain.handle('api:create-session', (_, data) => api.createSession(data));
+ipcMain.handle('api:update-session', (_, { id, data }) => api.updateSession(id, data));
 ipcMain.handle('api:delete-session', (_, id) => api.deleteSession(id));
 ipcMain.handle('api:send-message', async (_, { sessionId, content, agent, images }) => {
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 30; i++) {
     try { return await api.sendMessage(sessionId, content, agent, images); }
-    catch (e) { if (e.message === 'busy' && i < 9) { await new Promise(r => setTimeout(r, 2000)); continue; } throw e; }
+    catch (e) {
+      if (e.message === 'busy' && i < 29) {
+        await new Promise(r => setTimeout(r, 1000)); // Wait 1 second between retries
+        continue;
+      }
+      throw e;
+    }
   }
 });
 ipcMain.handle('api:set-server-url', (_, url) => { api.setUrl(url); return true; });
 ipcMain.handle('api:get-server-url', () => api.baseUrl);
+ipcMain.handle('api:abort-message', (_, sessionId) => api.abortMessage(sessionId));
+ipcMain.handle('api:get-logs', () => {
+  try {
+    // Read only last 50KB of log file to prevent hanging
+    const stat = fs.statSync(logFile);
+    const readSize = Math.min(stat.size, 50 * 1024);
+    const fd = fs.openSync(logFile, 'r');
+    const buffer = Buffer.alloc(readSize);
+    fs.readSync(fd, buffer, 0, readSize, stat.size - readSize);
+    fs.closeSync(fd);
+    return buffer.toString('utf8');
+  } catch { return ''; }
+});
 
 // ---------- SSE: http.request on /event (V1 API) ----------
 let sseSessionId = null;
 let sseConnection = null;
 let sseReconnectTimer = null;
 let sseStopped = true;
+const reasoningPartIds = new Set(); // Track reasoning part IDs
 
 function startSSE(sessionId) {
   if (!sessionId) return;
@@ -185,11 +206,20 @@ function handleSSEEvent(data) {
     let part = data.properties?.part;
     let messageID = data.properties?.messageID || part?.messageID;
 
+    // Track reasoning part IDs from updated events
+    if (part?.type === 'reasoning' && part?.id) {
+      reasoningPartIds.add(part.id);
+    }
+
     if (eventType === 'message.part.delta' && !part) {
       // Delta events: { type, properties: { sessionID, messageID, partID, field, delta } }
+      const partID = data.properties?.partID;
+      // Check if this partID is a reasoning part
+      const isReasoning = reasoningPartIds.has(partID);
+
       part = {
-        id: data.properties?.partID,
-        type: data.properties?.field === 'text' ? 'text' : data.properties?.field,
+        id: partID,
+        type: isReasoning ? 'reasoning' : (data.properties?.field === 'text' ? 'text' : data.properties?.field),
         text: data.properties?.delta,
         messageID: data.properties?.messageID,
         _isDelta: true,
@@ -223,6 +253,7 @@ function scheduleReconnect(ms) {
 function stopSSE() {
   sseStopped = true;
   sseSessionId = null;
+  reasoningPartIds.clear(); // Clear tracking on stop
   if (sseReconnectTimer) { clearTimeout(sseReconnectTimer); sseReconnectTimer = null; }
   if (sseConnection) { sseConnection.removeAllListeners(); sseConnection.destroy(); sseConnection = null; }
 }

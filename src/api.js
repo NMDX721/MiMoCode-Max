@@ -51,6 +51,7 @@ class ApiClient {
   getConfig() { return this.request('GET', '/config'); }
 
   createSession(data) { return this.request('POST', '/session', data); }
+  updateSession(id, data) { return this.request('PATCH', `/session/${id}`, data); }
 
   sendMessage(sessionId, content, agent, images) {
     const parts = [{ type: 'text', text: content }];
@@ -67,6 +68,9 @@ class ApiClient {
   }
 
   deleteSession(id) { return this.request('DELETE', `/session/${id}`); }
+
+  // Abort current generation
+  abortMessage(sessionId) { return this.request('POST', `/session/${sessionId}/abort`); }
 
   // SSE streaming
   streamMessages(sessionId, onChunk, onDone, onError) {
