@@ -46,7 +46,27 @@
       const active = s.id === currentSessionId ? ' active' : '';
       return `<div class="session-item${active}" data-id="${s.id}"><div class="title">${esc(s.title || 'Untitled')}</div><div class="time">${time}</div></div>`;
     }).join('');
-    sessionList.querySelectorAll('.session-item').forEach(el => el.addEventListener('click', () => selectSession(el.dataset.id)));
+    sessionList.querySelectorAll('.session-item').forEach(el => {
+      el.addEventListener('click', () => selectSession(el.dataset.id));
+      // 右键删除会话
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const id = el.dataset.id;
+        if (confirm('确定要删除此会话吗？')) {
+          window.mimo.deleteSession(id).then(() => {
+            sessions = sessions.filter(s => s.id !== id);
+            renderSessionList();
+            if (currentSessionId === id) {
+              currentSessionId = null;
+              chatTitle.textContent = '选择一个会话';
+              messagesEl.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4AC;</div><div class="text">输入消息开始新对话</div></div>';
+              renderedMsgIds.clear();
+            }
+            showNotification('会话已删除');
+          }).catch(() => showNotification('删除失败'));
+        }
+      });
+    });
   }
 
   async function selectSession(id) {
