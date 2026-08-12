@@ -282,6 +282,7 @@ function handleSSEEvent(data) {
     mainWindow.webContents.send('sse:session-idle', {
       sessionId: eventSessionId,
       type: eventType,
+      status: data.properties?.status, // 传递 session.status 的具体状态
     });
   }
 }

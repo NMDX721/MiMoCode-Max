@@ -296,6 +296,9 @@
     window.mimo.onSSESessionIdle(async (event) => {
       if (!currentSessionId) return;
 
+      // session.status 只有在明确为 idle 时才处理
+      if (event.type === 'session.status' && event.status !== 'idle') return;
+
       // 如果是当前 session 的 idle 事件，处理消息渲染
       if (event.sessionId === currentSessionId) {
         const mySessionId = currentSessionId;
