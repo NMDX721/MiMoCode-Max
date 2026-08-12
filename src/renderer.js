@@ -635,6 +635,7 @@
         e.className = 'message assistant';
         e.innerHTML = `<span style="color:var(--danger)">Error: ${esc(err.message)}</span>`;
         messagesEl.appendChild(e);
+        console.error('[SendMessage]', err.message);
       }
     }
     finally {
