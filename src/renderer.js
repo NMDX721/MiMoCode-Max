@@ -211,7 +211,12 @@
       removeLoading();
       stopStreamingFetch();
       // Mark all thinking elements as done streaming
-      messagesEl.querySelectorAll('.thinking.streaming').forEach(el => el.classList.remove('streaming'));
+      messagesEl.querySelectorAll('.thinking.streaming').forEach(el => {
+        el.classList.remove('streaming');
+        // Update summary from "Thinking..." to "Thought"
+        const summary = el.querySelector('summary');
+        if (summary && summary.textContent === 'Thinking...') summary.textContent = 'Thought';
+      });
       // Remove empty thinking blocks (thinking finished with no content)
       messagesEl.querySelectorAll('.thinking').forEach(el => {
         const content = el.querySelector('.thinking-content');
@@ -230,10 +235,15 @@
           const role = m.info?.role || 'assistant';
           // Skip user messages — already rendered client-side in sendMessage
           if (role === 'user' || userMsgIds.has(id)) {
-            // Adopt pending userDiv if it lacks data-msg-id
+            // Adopt pending userDiv if it lacks data-msg-id or has temp pending-* id
             if (id) {
-              const pending = messagesEl.querySelector('.message.user:not([data-msg-id])');
-              if (pending) { pending.dataset.msgId = id; renderedMsgIds.add(id); }
+              const pending = messagesEl.querySelector('.message.user:not([data-msg-id]), .message.user[data-msg-id^="pending-"]');
+              if (pending) {
+                if (pending.dataset.msgId?.startsWith('pending-')) userMsgIds.delete(pending.dataset.msgId);
+                pending.dataset.msgId = id;
+                renderedMsgIds.add(id);
+                userMsgIds.add(id);
+              }
             }
             continue;
           }
@@ -261,9 +271,6 @@
     // Skip if this is a client-sent user message
     if (userMsgIds.has(messageID)) return;
 
-    // Skip if already rendered (prevents duplicates from V1 SSE without role info)
-    if (renderedMsgIds.has(messageID)) return;
-
     // Skip step-start/step-finish (these don't produce visible content)
     if (part.type === 'step-start' || part.type === 'step-finish') return;
 
@@ -271,9 +278,14 @@
     let container = messagesEl.querySelector(`[data-msg-id="${messageID}"]`);
 
     if (!container) {
-      // Check if there's a pending user message (no data-msg-id yet) — adopt it
-      const pending = messagesEl.querySelector('.message.user:not([data-msg-id])');
+      // Check if there's a pending user message — adopt it
+      // Match: no data-msg-id OR temp pending-* id
+      const pending = messagesEl.querySelector('.message.user:not([data-msg-id]), .message.user[data-msg-id^="pending-"]');
       if (pending) {
+        // If it has a temp pending-* ID, remove from userMsgIds
+        if (pending.dataset.msgId?.startsWith('pending-')) {
+          userMsgIds.delete(pending.dataset.msgId);
+        }
         pending.dataset.msgId = messageID;
         renderedMsgIds.add(messageID);
         userMsgIds.add(messageID);
@@ -282,11 +294,12 @@
       // Skip user messages explicitly marked
       if (info?.role === 'user') return;
       // Create container for new messages (assistant or unknown role)
+      // Don't append to DOM yet — wait until we have content
       const role = info?.role || 'assistant';
       container = document.createElement('div');
       container.className = `message ${role}`;
       container.dataset.msgId = messageID;
-      messagesEl.appendChild(container);
+      container._needsAppend = true;
       renderedMsgIds.add(messageID);
     }
 
@@ -318,6 +331,11 @@
     if (el) {
       el.dataset.partKey = partKey;
       container.appendChild(el);
+      // If container was created by us but not yet appended, append it now
+      if (container._needsAppend) {
+        messagesEl.appendChild(container);
+        container._needsAppend = false;
+      }
     }
   }
 
@@ -345,7 +363,13 @@
 
   function updatePartElement(el, part) {
     if (part.type === 'text' && part.text) {
-      el.innerHTML = fmt(part.text);
+      // Check if this is a delta (partial update) or full text
+      if (part._isDelta && el.textContent) {
+        // Append delta to existing text
+        el.innerHTML = fmt(el.textContent + part.text);
+      } else {
+        el.innerHTML = fmt(part.text);
+      }
     } else if (part.type === 'reasoning') {
       // Update thinking content if text arrived
       if (part.text) {
@@ -625,7 +649,12 @@
     });
   }
 
-  function autoScroll() { const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100; if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight; }
+  function autoScroll() {
+    // Always scroll during streaming, otherwise only if near bottom
+    if (isStreaming || messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  }
   function autoResizeInput() { messageInput.style.height = 'auto'; messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px'; }
   function formatTime(ts) { const d = new Date(ts); return Date.now() - d < 86400000 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
