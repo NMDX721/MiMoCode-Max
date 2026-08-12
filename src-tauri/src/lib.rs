@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::{
-    image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
@@ -134,8 +133,9 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
+            let icon = app.default_window_icon().cloned().expect("No default icon");
             let _tray = TrayIconBuilder::new()
-                .icon(Image::from_path("icons/tray-icon.png")?)
+                .icon(icon)
                 .menu(&menu)
                 .tooltip("MiMo Code - Max")
                 .on_tray_icon_event(|tray, event| {
