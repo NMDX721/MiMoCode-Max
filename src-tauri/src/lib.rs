@@ -45,8 +45,10 @@ async fn spawn_tui<R: Runtime>(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(file);
-    cmd.args(args);
+    // Use shell to run the command so PATH is resolved
+    let mut cmd = CommandBuilder::new("cmd.exe");
+    cmd.args(["/C", &file]);
+    cmd.args(&args);
     if let Some(cwd) = cwd {
         cmd.cwd(OsString::from(cwd));
     }
