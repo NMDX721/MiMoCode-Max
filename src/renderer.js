@@ -586,15 +586,16 @@
     setTimeout(() => processMessageQueue(), 1000);
   }
 
-  // Process message queue - send directly to API
+  // Process message queue - 事件驱动，等待 idle 事件
   async function processMessageQueue() {
+    // 如果正在流式输出或队列为空，不处理
     if (messageQueue.length === 0 || isStreaming) return;
 
     const next = messageQueue.shift();
     showNotification('正在发送消息...');
     updateQueueButton();
 
-    // Create user message div
+    // 创建用户消息 div
     const userDiv = document.createElement('div');
     userDiv.className = 'message user';
     const tempId = 'pending-' + Date.now();
@@ -625,7 +626,7 @@
 
     try {
       await window.mimo.sendMessage(currentSessionId, next.content, currentAgent, (next.images || []).map(i => ({ data: i.data, mime: i.mime })));
-      // Fetch real message ID
+      // 获取真实消息 ID
       try {
         const msgs = await window.mimo.getMessages(currentSessionId);
         const list = Array.isArray(msgs) ? msgs : [];
@@ -643,11 +644,13 @@
     catch (err) {
       removeLoading();
       if (err.message === 'busy') {
+        // 收到 busy 错误，放回队列，等待 idle 事件
         userDiv.remove();
         userMsgIds.delete(tempId);
         messageQueue.unshift(next);
-        showNotification(`API 忙碌，消息已排队 (队列: ${messageQueue.length})`);
+        showNotification(`API 忙碌，等待空闲后发送 (队列: ${messageQueue.length})`);
         updateQueueButton();
+        // 不再立即重试，等待 session.idle 事件触发 processMessageQueue
       } else {
         const e = document.createElement('div');
         e.className = 'message assistant';
@@ -657,10 +660,8 @@
     }
     finally {
       isStreaming = false;
-      // Continue processing queue
-      if (messageQueue.length > 0) {
-        setTimeout(() => processMessageQueue(), 500);
-      }
+      // 如果队列中还有消息，等待 idle 事件（不主动重试）
+      // processMessageQueue 会在 session.idle 事件中被调用
     }
   }
 
@@ -779,8 +780,9 @@
         userDiv.remove();
         userMsgIds.delete(tempId);
         messageQueue.unshift({ content, images });
-        showNotification(`API 忙碌，消息已排队 (队列: ${messageQueue.length})`);
+        showNotification(`API 忙碌，等待空闲后发送 (队列: ${messageQueue.length})`);
         updateQueueButton();
+        // 不在这里重试，等待 session.idle 事件触发 processMessageQueue
       } else {
         const e = document.createElement('div');
         e.className = 'message assistant';
@@ -790,8 +792,8 @@
     }
     finally {
       isStreaming = false;
-      // Process queue if there are pending messages
-      processMessageQueue();
+      // 注意：不在这里调用 processMessageQueue
+      // 等待 session.idle 事件触发，确保 API 真正空闲
     }
   }
 
