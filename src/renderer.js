@@ -613,9 +613,9 @@
     catch (err) {
       removeLoading();
       if (err.message === 'busy') {
+        // 合并到队列中，队列栏会显示预览
         userDiv.remove();
         userMsgIds.delete(tempId);
-        // 如果发送失败，合并到队列中
         messageQueue.push(content);
         if (images?.length) queuedImages.push(...images);
         showNotification(`API 忙碌，合并到排队消息 (队列: ${messageQueue.length})`);
