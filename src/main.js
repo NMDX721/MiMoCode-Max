@@ -240,11 +240,23 @@ function handleSSEEvent(data) {
 
   logSSE(eventType, data);
 
+  // session.idle 事件不按 sessionId 过滤（409 busy 是服务器级别）
+  if (eventType === 'session.idle' || eventType === 'session.status') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sse:session-idle', {
+        sessionId: eventSessionId,
+        type: eventType,
+        status: data.properties?.status,
+      });
+    }
+    // 不继续处理，避免被 sessionId 过滤过滤掉
+    return;
+  }
+
   if (!eventSessionId || eventSessionId !== sseSessionId) return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   if (eventType === 'message.part.updated' || eventType === 'message.updated' || eventType === 'message.part.delta') {
-    // Handle delta events differently - they have delta/field, not part
     let part = data.properties?.part;
     let messageID = data.properties?.messageID || part?.messageID;
 
@@ -277,15 +289,7 @@ function handleSSEEvent(data) {
       messageID: messageID,
     });
   }
-
-  if (eventType === 'session.idle' || eventType === 'session.status') {
-    mainWindow.webContents.send('sse:session-idle', {
-      sessionId: eventSessionId,
-      type: eventType,
-      status: data.properties?.status, // 传递 session.status 的具体状态
-    });
-  }
-}
+} // 闭合 handleSSEEvent
 
 let reconnectAttempts = 0;
 
