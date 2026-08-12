@@ -319,6 +319,18 @@ body.theme-dark {
 
 #btn-cancel-queue:hover { background: var(--danger); color: #fff; }
 
+#btn-insert-queue {
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#btn-insert-queue:hover { background: var(--accent); color: #fff; }
+
 #input-wrapper {
   display: flex;
   align-items: flex-end;

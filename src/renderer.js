@@ -689,6 +689,21 @@
     }
   }
 
+  // 立即插入：打断当前任务，发送排队消息
+  async function insertQueue() {
+    if (messageQueue.length === 0 || !currentSessionId) return;
+    showNotification('正在打断当前任务...');
+    try {
+      await window.mimo.interruptMessage(currentSessionId);
+      // 等待 session 变为 idle
+      await new Promise(r => setTimeout(r, 1500));
+      // 处理队列
+      processMessageQueue();
+    } catch (err) {
+      showNotification('打断失败: ' + err.message);
+    }
+  }
+
   // Send
   async function sendMessage() {
     const content = messageInput.value.trim();
@@ -990,6 +1005,7 @@
     btnSend.addEventListener('click', sendMessage);
     btnStop.addEventListener('click', stopGeneration);
     $('#btn-cancel-queue').addEventListener('click', cancelQueue);
+    $('#btn-insert-queue').addEventListener('click', insertQueue);
     messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
     messageInput.addEventListener('input', () => {
       messageInput.style.height = 'auto';
