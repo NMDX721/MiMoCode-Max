@@ -699,7 +699,8 @@
     if (messageQueue.length === 0 || !currentSessionId) return;
     showNotification('正在打断当前任务...');
     try {
-      await window.mimo.interruptMessage(currentSessionId);
+      // v2 interrupt 被 MiMo Code 禁用，用 v1 abort 代替
+      await window.mimo.abortMessage(currentSessionId);
       insertPending = true; // 设置标记，等待 session.idle 事件
       showNotification('已打断，等待任务停止后发送...');
     } catch (err) {

@@ -110,7 +110,6 @@ ipcMain.handle('api:send-message', async (_, { sessionId, content, agent, images
 ipcMain.handle('api:set-server-url', (_, url) => { api.setUrl(url); return true; });
 ipcMain.handle('api:get-server-url', () => api.baseUrl);
 ipcMain.handle('api:abort-message', (_, sessionId) => api.abortMessage(sessionId));
-ipcMain.handle('api:interrupt-message', (_, sessionId) => api.interruptMessage(sessionId));
 ipcMain.handle('api:get-logs', () => {
   try {
     // Read only last 50KB of log file to prevent hanging

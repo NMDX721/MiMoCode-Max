@@ -75,9 +75,6 @@ class ApiClient {
   // Abort current generation
   abortMessage(sessionId) { return this.request('POST', `/session/${sessionId}/abort`); }
 
-  // Interrupt current execution (v2 API)
-  interruptMessage(sessionId) { return this.request('POST', `/api/session/${sessionId}/interrupt`); }
-
   // SSE streaming
   streamMessages(sessionId, onChunk, onDone, onError) {
     const url = new URL(`/session/${sessionId}/message`, this.baseUrl);
