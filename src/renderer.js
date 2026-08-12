@@ -274,90 +274,79 @@
     });
 
     window.mimo.onSSESessionIdle(async (event) => {
-      if (!currentSessionId || event.sessionId !== currentSessionId) return;
-      const mySessionId = currentSessionId; // capture at event time
-      isStreaming = false;
-      btnSend.disabled = false;
-      removeLoading();
-      stopStreamingFetch();
-      // Mark all thinking elements as done streaming
-      messagesEl.querySelectorAll('.thinking.streaming').forEach(el => {
-        el.classList.remove('streaming');
-        // Update summary from "Thinking..." to "Thought"
-        const summary = el.querySelector('summary');
-        if (summary && summary.textContent === 'Thinking...') summary.textContent = 'Thought';
-      });
-      // Remove empty thinking blocks (thinking finished with no content)
-      messagesEl.querySelectorAll('.thinking').forEach(el => {
-        const content = el.querySelector('.thinking-content');
-        if (content && !content.textContent.trim()) el.remove();
-      });
-      // Final fetch to ensure completeness — only add NEW messages, don't re-render existing
-      delete messageCache[mySessionId];
-      try {
-        const msgs = await window.mimo.getMessages(mySessionId);
-        // Bail if user switched sessions during fetch
-        if (currentSessionId !== mySessionId) return;
-        const list = Array.isArray(msgs) ? msgs : [];
-        messageCache[mySessionId] = list;
-        for (const m of list) {
-          const id = m.info?.id || '';
-          const role = m.info?.role || 'assistant';
-          // Skip user messages — already rendered client-side in sendMessage
-          if (role === 'user' || userMsgIds.has(id)) {
-            // Adopt pending userDiv if it lacks data-msg-id or has temp pending-* id
-            if (id) {
-              const pending = messagesEl.querySelector('.message.user:not([data-msg-id]), .message.user[data-msg-id^="pending-"]');
-              if (pending) {
-                if (pending.dataset.msgId?.startsWith('pending-')) userMsgIds.delete(pending.dataset.msgId);
-                pending.dataset.msgId = id;
-                renderedMsgIds.add(id);
-                userMsgIds.add(id);
-              }
-            }
-            continue;
-          }
-          if (messagesEl.querySelector(`[data-msg-id="${id}"]`)) continue; // already in DOM
-          const container = document.createElement('div');
-          container.className = `message ${role}`;
-          container.dataset.msgId = id;
+      if (!currentSessionId) return;
 
-          // Collect reasoning texts to avoid duplication
-          const reasoningTexts = [];
-          for (const part of m.parts || []) {
-            if (part.type === 'reasoning' && part.text?.trim()) {
-              reasoningTexts.push(part.text.trim());
+      // 如果是当前 session 的 idle 事件，处理消息渲染
+      if (event.sessionId === currentSessionId) {
+        const mySessionId = currentSessionId;
+        isStreaming = false;
+        btnSend.disabled = false;
+        removeLoading();
+        stopStreamingFetch();
+        // Mark all thinking elements as done streaming
+        messagesEl.querySelectorAll('.thinking.streaming').forEach(el => {
+          el.classList.remove('streaming');
+          const summary = el.querySelector('summary');
+          if (summary && summary.textContent === 'Thinking...') summary.textContent = 'Thought';
+        });
+        // Remove empty thinking blocks
+        messagesEl.querySelectorAll('.thinking').forEach(el => {
+          const content = el.querySelector('.thinking-content');
+          if (content && !content.textContent.trim()) el.remove();
+        });
+        // 获取最新消息
+        delete messageCache[mySessionId];
+        try {
+          const msgs = await window.mimo.getMessages(mySessionId);
+          if (currentSessionId !== mySessionId) return;
+          const list = Array.isArray(msgs) ? msgs : [];
+          messageCache[mySessionId] = list;
+          for (const m of list) {
+            const id = m.info?.id || '';
+            const role = m.info?.role || 'assistant';
+            if (role === 'user' || userMsgIds.has(id)) {
+              if (id) {
+                const pending = messagesEl.querySelector('.message.user:not([data-msg-id]), .message.user[data-msg-id^="pending-"]');
+                if (pending) {
+                  if (pending.dataset.msgId?.startsWith('pending-')) userMsgIds.delete(pending.dataset.msgId);
+                  pending.dataset.msgId = id;
+                  renderedMsgIds.add(id);
+                  userMsgIds.add(id);
+                }
+              }
+              continue;
             }
+            if (messagesEl.querySelector(`[data-msg-id="${id}"]`)) continue;
+            const container = document.createElement('div');
+            container.className = `message ${role}`;
+            container.dataset.msgId = id;
+            const reasoningTexts = [];
+            for (const part of m.parts || []) {
+              if (part.type === 'reasoning' && part.text?.trim()) reasoningTexts.push(part.text.trim());
+            }
+            for (const part of m.parts || []) {
+              if (part.type === 'text' && part.text?.trim()) {
+                const textContent = part.text.trim();
+                const isDuplicate = reasoningTexts.some(rt => rt === textContent || rt.includes(textContent) || textContent.includes(rt));
+                if (!isDuplicate) {
+                  const d = document.createElement('div');
+                  d.className = 'msg-text';
+                  d.innerHTML = fmt(part.text);
+                  container.appendChild(d);
+                }
+              } else if (part.type === 'reasoning' && part.text?.trim()) {
+                if (!container.querySelector('.thinking')) container.appendChild(createThinking(part.text, false));
+              } else if (part.type === 'tool') container.appendChild(createTool(part));
+              else if (part.type === 'file') container.appendChild(createFilePart(part));
+            }
+            if (container.children.length) messagesEl.appendChild(container);
           }
+          autoScroll();
+        } catch {}
+      }
 
-          for (const part of m.parts || []) {
-            if (part.type === 'text' && part.text?.trim()) {
-              // Skip text if it's the same as reasoning content (prevents duplication)
-              const textContent = part.text.trim();
-              const isDuplicate = reasoningTexts.some(rt =>
-                rt === textContent || rt.includes(textContent) || textContent.includes(rt)
-              );
-              if (!isDuplicate) {
-                const d = document.createElement('div');
-                d.className = 'msg-text';
-                d.innerHTML = fmt(part.text);
-                container.appendChild(d);
-              }
-            }
-            else if (part.type === 'reasoning' && part.text?.trim()) {
-              // Skip reasoning if thinking block already exists in this container
-              if (!container.querySelector('.thinking')) {
-                container.appendChild(createThinking(part.text, false));
-              }
-            }
-            else if (part.type === 'tool') container.appendChild(createTool(part));
-            else if (part.type === 'file') container.appendChild(createFilePart(part));
-          }
-          if (container.children.length) messagesEl.appendChild(container);
-        }
-        autoScroll();
-      } catch {}
-      // Process queued messages after session becomes idle
+      // 无论哪个 session 的 idle 事件，都尝试处理队列
+      // (因为 409 busy 是整个服务器级别的，不是按 session 区分的)
       if (insertPending) {
         insertPending = false;
         processMessageQueue();
