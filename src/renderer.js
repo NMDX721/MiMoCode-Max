@@ -707,6 +707,34 @@
     }
   }
 
+  // 导出会话为 Markdown
+  async function exportSession() {
+    if (!currentSessionId) { showNotification('请先选择会话'); return; }
+    try {
+      const msgs = await window.mimo.getMessages(currentSessionId);
+      const list = Array.isArray(msgs) ? msgs : [];
+      if (!list.length) { showNotification('会话为空'); return; }
+
+      const title = chatTitle.textContent || '会话';
+      const lines = [`# ${title}`, ''];
+      for (const m of list) {
+        const role = m.info?.role === 'user' ? '**用户**' : '**助手**';
+        lines.push(`## ${role}`);
+        for (const part of m.parts || []) {
+          if (part.type === 'text' && part.text?.trim()) lines.push(part.text.trim());
+          else if (part.type === 'reasoning' && part.text?.trim()) lines.push(`> 思考: ${part.text.trim()}`);
+          else if (part.type === 'tool' && part.state?.input?.command) lines.push(`\`\`\`\n${part.state.input.command}\n\`\`\``);
+        }
+        lines.push('');
+      }
+      const markdown = lines.filter(l => l !== undefined).join('\n');
+      await navigator.clipboard.writeText(markdown);
+      showNotification('已导出到剪贴板 (' + list.length + ' 条消息)');
+    } catch (err) {
+      showNotification('导出失败: ' + err.message);
+    }
+  }
+
   // Send
   async function sendMessage() {
     const content = messageInput.value.trim();
@@ -1021,6 +1049,7 @@
     btnStop.addEventListener('click', stopGeneration);
     $('#btn-cancel-queue').addEventListener('click', cancelQueue);
     $('#btn-insert-queue').addEventListener('click', insertQueue);
+    $('#btn-export').addEventListener('click', exportSession);
     messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
     messageInput.addEventListener('input', () => {
       messageInput.style.height = 'auto';
