@@ -300,20 +300,15 @@ ipcMain.on('window:open-external', (_, url) => shell.openExternal(url));
 app.whenReady().then(async () => {
   log('[App] Starting MiMo Code - Max...');
 
-  // 检查并关闭 TUI，确保 Max 独占 API
-  if (serverManager.isTuiRunning()) {
-    log('[App] TUI detected, terminating for exclusive access...');
-    serverManager.killTui();
-    // 等待端口释放
-    await new Promise(r => setTimeout(r, 2000));
-  }
+  // 关键改变：不再杀死 TUI，而是连接到它的 server
+  // TUI 启动时会自动启动 server，Max 只需要连接
 
-  // 启动 headless server
+  // 启动或连接到 server
   const serverStarted = await serverManager.start();
   if (serverStarted) {
-    log('[App] Server started successfully');
+    log('[App] Connected to server successfully');
   } else {
-    log('[App] Warning: Server failed to start');
+    log('[App] Warning: Failed to connect to server');
   }
 
   createWindow();
