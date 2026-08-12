@@ -1176,6 +1176,8 @@
         const tabId = 'tab-' + item.dataset.tab;
         const tab = document.getElementById(tabId);
         if (tab) tab.classList.add('active');
+        // 记住当前标签页
+        localStorage.setItem('mimo-settings-tab', item.dataset.tab);
       });
     });
 
@@ -1185,6 +1187,14 @@
         const url = await window.mimo.getServerUrl();
         $('#setting-server-url').value = url || 'http://127.0.0.1:4096';
       } catch {}
+      // 恢复上次打开的标签页
+      const savedTab = localStorage.getItem('mimo-settings-tab') || 'connection';
+      document.querySelectorAll('.settings-nav-item').forEach(i => {
+        i.classList.toggle('active', i.dataset.tab === savedTab);
+      });
+      document.querySelectorAll('.settings-tab').forEach(t => {
+        t.classList.toggle('active', t.id === 'tab-' + savedTab);
+      });
       // Load saved settings
       $('#setting-app-title').value = localStorage.getItem('mimo-app-title') || 'MiMo Code - Max';
       $('#setting-theme').value = localStorage.getItem('mimo-theme') || 'light';
