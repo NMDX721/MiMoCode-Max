@@ -96,6 +96,7 @@
     if (!msg.parts?.length) return;
     const container = document.createElement('div');
     container.className = `message ${role}`;
+    if (msg.info?.id) container.dataset.msgId = msg.info.id;
     for (const part of msg.parts) {
       switch (part.type) {
         case 'text': if (part.text?.trim()) { const d = document.createElement('div'); d.className = 'msg-text'; d.innerHTML = fmt(part.text); container.appendChild(d); } break;
