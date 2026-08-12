@@ -133,7 +133,7 @@ body.theme-dark {
 #sidebar-header .refresh-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
 #btn-new-chat {
-  width: 100%;
+  flex: 1;
   padding: 10px;
   border: 1px dashed var(--border);
   border-radius: 8px;
