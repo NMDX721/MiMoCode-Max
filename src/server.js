@@ -100,11 +100,11 @@ class ServerManager {
     return new Promise((resolve) => {
       safeLog('Spawning: mimo serve --port', this.port);
 
-      this.process = spawn('mimo', ['serve', '--port', String(this.port)], {
+      // 使用 cmd.exe /c 来确保 PATH 被解析，同时隐藏窗口
+      this.process = spawn('cmd.exe', ['/c', 'mimo', 'serve', '--port', String(this.port)], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
-        shell: true,
       });
 
       this.process.on('error', (err) => {
