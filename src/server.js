@@ -4,9 +4,15 @@
 
 const { spawn, execSync } = require('child_process');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
+// 调试日志函数 - 写入文件
+const logFile = path.join(process.env.USERPROFILE || '', '.mimocode_home', 'max-debug.log');
 function safeLog(...args) {
-  try { console.log(...args); } catch {}
+  const msg = new Date().toISOString() + ' [Server] ' + args.join(' ') + '\n';
+  try { fs.appendFileSync(logFile, msg); } catch {}
+  try { console.log(msg.trim()); } catch {}
 }
 
 class ServerManager {
@@ -14,17 +20,23 @@ class ServerManager {
     this.port = port;
     this.process = null;
     this.baseUrl = `http://127.0.0.1:${port}`;
-    this.isHeadlessServer = false;  // 标记是否是 Max 自己启动的 server
+    this.isHeadlessServer = false;
+    safeLog('ServerManager initialized on port', this.port);
   }
 
   // 检查 server 是否运行
   async isRunning() {
     return new Promise((resolve) => {
       const req = http.get(`${this.baseUrl}/global/health`, (res) => {
-        resolve(res.statusCode === 200);
+        const running = res.statusCode === 200;
+        safeLog('isRunning check:', running ? 'YES' : 'NO', '(status:', res.statusCode, ')');
+        resolve(running);
         res.resume();
       });
-      req.on('error', () => resolve(false));
+      req.on('error', (err) => {
+        safeLog('isRunning check: NO (error:', err.message, ')');
+        resolve(false);
+      });
       req.setTimeout(2000, () => { req.destroy(); resolve(false); });
     });
   }
@@ -36,46 +48,58 @@ class ServerManager {
         encoding: 'utf8',
         windowsHide: true,
       });
-      return output.includes('mimo.exe');
-    } catch {
+      const running = output.includes('mimo.exe');
+      safeLog('TUI check:', running ? 'RUNNING' : 'NOT RUNNING');
+      if (running) {
+        safeLog('TUI process details:', output.substring(0, 200));
+      }
+      return running;
+    } catch (err) {
+      safeLog('TUI check: ERROR', err.message);
       return false;
     }
   }
 
-  // 启动 server（Max 专用）
+  // 启动 server
   async start() {
-    safeLog('[Server] Checking server status...');
+    safeLog('=== Starting server check ===');
 
-    // 关键逻辑：如果 server 已经在运行（可能是 TUI 启动的），直接连接
+    // 步骤 1: 检查 server 是否已在运行
+    safeLog('Step 1: Checking if server is already running...');
     if (await this.isRunning()) {
-      safeLog('[Server] Server already running on port', this.port);
-      safeLog('[Server] Connecting to existing server (TUI or headless)');
-      this.isHeadlessServer = false;  // 不是 Max 启动的
+      safeLog('✓ Server already running on port', this.port);
+      safeLog('✓ Connecting to existing server (TUI or headless)');
+      this.isHeadlessServer = false;
       return true;
     }
 
-    // 如果 server 没运行，检查 TUI 是否在运行
+    // 步骤 2: 检查 TUI 是否在运行
+    safeLog('Step 2: Checking if TUI is running...');
     if (this.isTuiRunning()) {
-      safeLog('[Server] TUI is running but server not responding');
-      safeLog('[Server] Waiting for TUI server to start...');
-      
-      // 等待 TUI 的 server 启动
+      safeLog('TUI is running but server not responding');
+      safeLog('Waiting for TUI server to start (up to 10 seconds)...');
+
       for (let i = 0; i < 10; i++) {
         await new Promise(r => setTimeout(r, 1000));
+        safeLog(`Wait attempt ${i + 1}/10...`);
         if (await this.isRunning()) {
-          safeLog('[Server] TUI server is now running');
+          safeLog('✓ TUI server is now running');
           return true;
         }
       }
-      
-      safeLog('[Server] TUI server did not start, starting headless server');
+
+      safeLog('⚠ TUI server did not start, will start headless server');
+    } else {
+      safeLog('TUI is not running');
     }
 
-    // 如果都没有，启动 headless server
-    safeLog('[Server] Starting headless server on port', this.port);
+    // 步骤 3: 启动 headless server
+    safeLog('Step 3: Starting headless server on port', this.port);
     this.isHeadlessServer = true;
 
     return new Promise((resolve) => {
+      safeLog('Spawning: mimo serve --port', this.port);
+
       this.process = spawn('mimo', ['serve', '--port', String(this.port)], {
         detached: true,
         stdio: 'ignore',
@@ -83,32 +107,44 @@ class ServerManager {
         shell: true,
       });
 
+      this.process.on('error', (err) => {
+        safeLog('Spawn error:', err.message);
+      });
+
+      this.process.on('exit', (code) => {
+        safeLog('Process exited with code:', code);
+      });
+
       this.process.unref();
 
       let retries = 0;
       const checkInterval = setInterval(async () => {
+        retries++;
+        safeLog(`Checking server (attempt ${retries}/30)...`);
         if (await this.isRunning()) {
           clearInterval(checkInterval);
-          safeLog('[Server] Headless server started successfully');
+          safeLog('✓ Headless server started successfully');
           resolve(true);
-        } else if (retries++ > 30) {
+        } else if (retries >= 30) {
           clearInterval(checkInterval);
-          safeLog('[Server] Failed to start headless server');
+          safeLog('✗ Failed to start headless server after 30 retries');
           resolve(false);
         }
       }, 1000);
     });
   }
 
-  // 停止 server（只停止 Max 自己启动的）
+  // 停止 server
   stop() {
+    safeLog('=== Stopping server ===');
     if (this.process && this.isHeadlessServer) {
-      safeLog('[Server] Stopping headless server...');
+      safeLog('Stopping headless server...');
       this.process.kill();
       this.process = null;
       this.isHeadlessServer = false;
+      safeLog('✓ Headless server stopped');
     } else {
-      safeLog('[Server] Not stopping server (managed by TUI)');
+      safeLog('Not stopping server (managed by TUI or not started by Max)');
     }
   }
 

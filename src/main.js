@@ -298,21 +298,28 @@ ipcMain.on('window:open-external', (_, url) => shell.openExternal(url));
 
 // ---------- App lifecycle ----------
 app.whenReady().then(async () => {
+  log('========================================');
   log('[App] Starting MiMo Code - Max...');
+  log('[App] Time:', new Date().toISOString());
+  log('========================================');
 
   // 关键改变：不再杀死 TUI，而是连接到它的 server
   // TUI 启动时会自动启动 server，Max 只需要连接
 
   // 启动或连接到 server
+  log('[App] Calling serverManager.start()...');
   const serverStarted = await serverManager.start();
   if (serverStarted) {
-    log('[App] Connected to server successfully');
+    log('[App] ✓ Server connection successful');
   } else {
-    log('[App] Warning: Failed to connect to server');
+    log('[App] ✗ Warning: Failed to connect to server');
   }
 
+  log('[App] Creating window...');
   createWindow();
+  log('[App] Creating tray...');
   createTray();
+  log('[App] Startup complete');
 });
 
 app.on('window-all-closed', () => {
