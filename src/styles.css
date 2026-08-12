@@ -307,6 +307,15 @@ body.theme-dark {
 
 #queue-info.hidden { display: none; }
 
+.queue-preview {
+  font-style: italic;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
 #btn-cancel-queue {
   padding: 2px 8px;
   border: 1px solid var(--danger);

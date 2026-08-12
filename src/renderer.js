@@ -7,7 +7,6 @@
   let stopRequested = false;
   let renderedMsgIds = new Set();
   let messageCache = {};
-  let fetchDebounce = null;
   let loadingEl = null;
   let pendingNewChat = false;
   let pendingImages = [];
