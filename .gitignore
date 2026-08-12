@@ -26,3 +26,8 @@ api-response.json
 # OS
 .DS_Store
 Thumbs.db
+
+debug.log
+debug.log.err
+api-response.json
+package-lock.json
