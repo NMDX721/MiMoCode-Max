@@ -29,7 +29,7 @@ class ApiClient {
             return;
           }
           if (res.statusCode >= 400) {
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 200)}`));
             return;
           }
           try {
@@ -40,7 +40,7 @@ class ApiClient {
         });
       });
 
-      req.on('error', reject);
+      req.on('error', (err) => reject(new Error(`request: ${err.message}`)));
       req.setTimeout(timeout, () => { req.destroy(); reject(new Error('timeout')); });
 
       if (body) req.write(JSON.stringify(body));
@@ -61,14 +61,13 @@ class ApiClient {
     const parts = [{ type: 'text', text: content }];
     if (Array.isArray(images)) {
       for (const img of images) {
-        // API expects "mime" field (not "mediaType")
         const mime = img.mime || 'image/png';
         const url = img.data || img;
         parts.push({ type: 'file', mime, url });
       }
     }
     const body = { parts, agent: agent || 'compose' };
-    return this.request('POST', `/session/${sessionId}/message`, body);
+    return this.request('POST', `/session/${sessionId}/message`, body, 300000); // 5min timeout for messages
   }
 
   deleteSession(id) { return this.request('DELETE', `/session/${id}`); }
