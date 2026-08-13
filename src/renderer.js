@@ -866,9 +866,13 @@
   async function loadConfig() {
     try {
       config = await window.mimo.getConfig();
+      // 同步 Agent 模式（从 TUI 配置继承）
+      if (config.agent) {
+        currentAgent = config.agent;
+      }
       if (config.model) {
         const shortName = config.model.split('/').pop().replace('mimo-', 'MiMo ').replace('-pro', '-Pro').replace('-v2.5', ' 2.5');
-        $('#chat-status').textContent = `Model: ${shortName}`;
+        $('#chat-status').textContent = `Model: ${shortName} | Agent: ${currentAgent}`;
         // Set model selector value
         const selector = $('#model-selector');
         if (selector && selector.options.length > 0) {
@@ -1177,7 +1181,7 @@
           await window.mimo.updateSession(currentSessionId, { model });
           // Update status display - 提取模型名称最后部分
           const shortName = model.split('/').pop().replace('mimo-', 'MiMo ').replace('-pro', '-Pro').replace('-v2.5', ' 2.5');
-          $('#chat-status').textContent = `Model: ${shortName}`;
+          $('#chat-status').textContent = `Model: ${shortName} | Agent: ${currentAgent}`;
         } catch {}
       });
     }
