@@ -867,8 +867,8 @@
     try {
       config = await window.mimo.getConfig();
       if (config.model) {
-        const name = config.model.replace('xiaomi/', '').replace('mimo-', 'MiMo ').replace('-pro', '').toUpperCase().replace('V2.5', '2.5');
-        $('#chat-status').textContent = `Model: ${name}`;
+        const shortName = config.model.split('/').pop().replace('mimo-', 'MiMo ').replace('-pro', '-Pro').replace('-v2.5', ' 2.5');
+        $('#chat-status').textContent = `Model: ${shortName}`;
         // Set model selector value
         const selector = $('#model-selector');
         if (selector && selector.options.length > 0) {
@@ -886,9 +886,9 @@
       if (selector) {
         selector.innerHTML = '';
         const models = config.models && Array.isArray(config.models) ? config.models : [
-          { id: 'xiaomi/mimo-v2-pro', name: 'MiMo V2 Pro' },
-          { id: 'xiaomi/mimo-v2-flash', name: 'MiMo V2 Flash' },
-          { id: 'xiaomi/mimo-v2-lite', name: 'MiMo V2 Lite' },
+          { id: 'xiaomi/mimo-v2.5-pro', name: 'MiMo 2.5 Pro' },
+          { id: 'xiaomi/mimo-v2.5', name: 'MiMo 2.5' },
+          { id: 'xiaomi/mimo-auto', name: 'MiMo Auto' },
         ];
         models.forEach(model => {
           const option = document.createElement('option');
@@ -969,19 +969,27 @@
     if (versionEl) versionEl.textContent = 'v1.0.0';
   }
 
-  // Slash commands
+  // Slash commands (与 TUI 完全一致)
   const slashCommands = [
-    { name: '/help', description: '显示帮助' },
+    { name: '/help', description: '显示帮助信息' },
+    { name: '/new', description: '新建对话' },
     { name: '/clear', description: '清空当前对话' },
-    { name: '/model', description: '切换模型' },
-    { name: '/agent', description: '切换代理模式' },
-    { name: '/compact', description: '压缩对话' },
+    { name: '/sessions', description: '列出所有会话' },
+    { name: '/models', description: '列出可用模型' },
+    { name: '/compact', description: '压缩对话上下文' },
     { name: '/export', description: '导出对话' },
-    { name: '/debug', description: '切换调试模式' },
-    { name: '/parallel', description: '并行执行任务' },
-    { name: '/tdd', description: '测试驱动开发' },
-    { name: '/review', description: '代码审查' },
-    { name: '/merge', description: '合并工作' },
+    { name: '/undo', description: '撤销上一条消息' },
+    { name: '/redo', description: '重做撤销的消息' },
+    { name: '/init', description: '初始化项目配置' },
+    { name: '/connect', description: '添加 API 提供商' },
+    { name: '/thinking', description: '切换思考过程显示' },
+    { name: '/details', description: '切换工具执行详情' },
+    { name: '/editor', description: '打开外部编辑器' },
+    { name: '/themes', description: '选择主题' },
+    { name: '/share', description: '分享会话' },
+    { name: '/agents', description: '列出代理模式' },
+    { name: '/context', description: '查看 Token 使用情况' },
+    { name: '/exit', description: '退出应用' },
   ];
 
   let commandPickerVisible = false;
@@ -1167,9 +1175,9 @@
         try {
           // Update config with new model
           await window.mimo.updateSession(currentSessionId, { model });
-          // Update status display
-          const name = model.replace('mimo-', 'MiMo ').replace('-pro', '').replace('-flash', '').replace('-lite', '').toUpperCase().replace('V2.5', '2.5');
-          $('#chat-status').textContent = `Model: ${name}`;
+          // Update status display - 提取模型名称最后部分
+          const shortName = model.split('/').pop().replace('mimo-', 'MiMo ').replace('-pro', '-Pro').replace('-v2.5', ' 2.5');
+          $('#chat-status').textContent = `Model: ${shortName}`;
         } catch {}
       });
     }
@@ -1294,11 +1302,13 @@
   }
 
   function autoScroll() {
-    // Always scroll during streaming, otherwise only if near bottom
-    if (isStreaming || messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100) {
+    // 只在用户已经在最底部时才自动滚动
+    // 如果用户往上翻看历史，不强制滚动
+    const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+    if (isNearBottom) {
       messagesEl.scrollTo({
         top: messagesEl.scrollHeight,
-        behavior: isStreaming ? 'smooth' : 'auto'
+        behavior: 'smooth'
       });
     }
   }
